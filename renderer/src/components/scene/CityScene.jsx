@@ -33,7 +33,7 @@ export default function CityScene() {
         // Scene
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0a0f);
-        scene.fog = new THREE.FogExp2(0x0a0a0f, 0.00008);
+        scene.fog = new THREE.FogExp2(0x0a0a0f, 0.00003);
         sceneRef.current = scene;
 
         // Camera — far clipping at 100k to handle large cities
@@ -112,7 +112,7 @@ export default function CityScene() {
     // Setup lights
     function setupLights(scene) {
         // Strong ambient for visibility
-        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+        const ambient = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambient);
 
         // Hemisphere light
@@ -192,10 +192,14 @@ export default function CityScene() {
         scene.add(cityGroup);
         cityGroupRef.current = cityGroup;
 
-        // Compute bounds and fit camera
+        // Add axes helper at city center for visual orientation
         const box = new THREE.Box3().setFromObject(cityGroup);
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
+
+        const axes = new THREE.AxesHelper(200);
+        axes.position.copy(center);
+        scene.add(axes);
 
         const info = `B:${buildings.children.length} R:${roads.children.length} A:${amenities.children.length}\n` +
             `Size: ${size.x.toFixed(0)}×${size.y.toFixed(0)}×${size.z.toFixed(0)}\n` +

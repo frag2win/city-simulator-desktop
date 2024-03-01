@@ -7,10 +7,10 @@ import * as THREE from 'three';
 
 // Color palette for buildings based on height
 const BUILDING_COLORS = {
-    low: 0x5a6a7a,      // Gray — 1-3 floors
-    medium: 0x6a7a8a,   // Blue-gray — 4-8 floors
-    tall: 0x7a8a9a,     // Lighter — 9-15 floors
-    high: 0x8a9aaa,     // Steel — 16+ floors
+    low: 0x8899aa,      // Light gray — 1-3 floors
+    medium: 0x99aabb,   // Blue-gray — 4-8 floors
+    tall: 0xaabbcc,     // Lighter — 9-15 floors
+    high: 0xbbccdd,     // Near-white — 16+ floors
 };
 
 /**
@@ -105,12 +105,14 @@ function tryExtrudeMesh(ring, height, levels) {
 
         // Rotate so extrusion goes UP (Y axis) instead of Z
         geometry.rotateX(-Math.PI / 2);
+        geometry.computeVertexNormals(); // Fix normals after rotation
 
         const color = getBuildingColor(levels);
         const material = new THREE.MeshStandardMaterial({
             color,
             roughness: 0.7,
             metalness: 0.1,
+            side: THREE.DoubleSide, // Prevent backface culling issues
         });
 
         const mesh = new THREE.Mesh(geometry, material);
@@ -150,6 +152,7 @@ function tryBoxFallback(ring, height, levels) {
             color,
             roughness: 0.7,
             metalness: 0.1,
+            side: THREE.DoubleSide,
         });
 
         const mesh = new THREE.Mesh(geom, mat);
