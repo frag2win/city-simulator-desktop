@@ -4,6 +4,8 @@ import CityScene from '../scene/CityScene';
 import CitySearchBar from '../ui/CitySearchBar';
 import ProgressModal from '../ui/ProgressModal';
 import CacheManager from '../ui/CacheManager';
+import EntityInfoPanel from '../ui/EntityInfoPanel';
+import LayerToggles from '../ui/LayerToggles';
 import useCityStore from '../../store/cityStore';
 
 const ipc = window.electronAPI;
@@ -64,6 +66,8 @@ export default function AppShell() {
                                 <div className="hud__stat hud__stat--total">{featureCount} total</div>
                             </div>
                             <div className="hud__actions">
+                                <LayerToggles />
+                                <div className="hud__divider" />
                                 <button className="hud__btn" onClick={() => setShowSearch(true)} title="Load another city (Ctrl+L)">
                                     🔍
                                 </button>
@@ -72,6 +76,9 @@ export default function AppShell() {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Entity info panel (right side) */}
+                        <EntityInfoPanel />
                     </div>
                 ) : (
                     <div className="viewport">

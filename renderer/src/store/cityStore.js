@@ -26,9 +26,23 @@ const useCityStore = create((set, get) => ({
     // ─── Search ──────────────────────────────
     showSearch: false,
 
+    // ─── Entity Selection ────────────────────
+    selectedEntity: null,   // { type, osm_id, name, height, levels, ... }
+
+    // ─── Layer Visibility ────────────────────
+    layers: {
+        buildings: true,
+        roads: true,
+        amenities: true,
+    },
+
     // ─── Actions ─────────────────────────────
     setShowSearch: (show) => set({ showSearch: show }),
     setShowCacheManager: (show) => set({ showCacheManager: show }),
+    setSelectedEntity: (entity) => set({ selectedEntity: entity }),
+    toggleLayer: (layer) => set((state) => ({
+        layers: { ...state.layers, [layer]: !state.layers[layer] },
+    })),
 
     setCityData: (data) => set({
         cityData: data,

@@ -8,7 +8,7 @@ import useCityStore from '../../store/cityStore';
 
 /**
  * CityScene — Main Three.js 3D viewport.
- * Renders buildings, roads, and amenities from GeoJSON data.
+ * Renders buildings, roads, and amenities with raycasting selection.
  */
 export default function CityScene() {
     const containerRef = useRef(null);
@@ -18,8 +18,12 @@ export default function CityScene() {
     const controlsRef = useRef(null);
     const animationRef = useRef(null);
     const cityGroupRef = useRef(null);
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const mouseRef = useRef(new THREE.Vector2());
+    const highlightRef = useRef(null);         // currently highlighted mesh
+    const originalColorRef = useRef(null);     // original color before highlight
 
-    const { cityData } = useCityStore();
+    const { cityData, layers, setSelectedEntity } = useCityStore();
 
     // Initialize Three.js scene
     const initScene = useCallback(() => {
@@ -69,8 +73,6 @@ export default function CityScene() {
 
         // Lights
         setupLights(scene);
-
-        // Ground plane
         setupGround(scene);
 
         // Grid
@@ -78,7 +80,50 @@ export default function CityScene() {
         grid.position.y = 0.05;
         scene.add(grid);
 
-        // Handle resize
+        // Click handler for entity selection
+        const handleClick = (event) => {
+            const rect = container.getBoundingClientRect();
+            mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycasterRef.current.setFromCamera(mouseRef.current, camera);
+
+            if (!cityGroupRef.current) return;
+
+            const intersects = raycasterRef.current.intersectObjects(
+                cityGroupRef.current.children.flatMap(g => g.children || []),
+                false
+            );
+
+            // Reset previous highlight
+            if (highlightRef.current && originalColorRef.current) {
+                highlightRef.current.material.color.copy(originalColorRef.current);
+                highlightRef.current.material.emissive?.setHex(0x000000);
+                highlightRef.current = null;
+                originalColorRef.current = null;
+            }
+
+            // Find first hit with userData
+            const hit = intersects.find(i => i.object?.userData?.type);
+            if (hit) {
+                const mesh = hit.object;
+                // Highlight selected entity
+                originalColorRef.current = mesh.material.color.clone();
+                highlightRef.current = mesh;
+                mesh.material.color.setHex(0x44aaff);
+                if (mesh.material.emissive) {
+                    mesh.material.emissive.setHex(0x112244);
+                }
+                // Push selection to store
+                setSelectedEntity(mesh.userData);
+            } else {
+                setSelectedEntity(null);
+            }
+        };
+
+        container.addEventListener('click', handleClick);
+
+        // Resize
         const handleResize = () => {
             if (!container) return;
             const w = container.clientWidth;
@@ -98,6 +143,7 @@ export default function CityScene() {
         animate();
 
         return () => {
+            container.removeEventListener('click', handleClick);
             window.removeEventListener('resize', handleResize);
             cancelAnimationFrame(animationRef.current);
             controls.dispose();
@@ -106,19 +152,13 @@ export default function CityScene() {
                 container.removeChild(renderer.domElement);
             }
         };
-    }, []);
+    }, [setSelectedEntity]);
 
-    // Lights — cinematic blue-tinted cityscape lighting
+    // Lights
     function setupLights(scene) {
-        // Ambient — cool blue base
-        const ambient = new THREE.AmbientLight(0xccccff, 0.7);
-        scene.add(ambient);
+        scene.add(new THREE.AmbientLight(0xccccff, 0.7));
+        scene.add(new THREE.HemisphereLight(0x7799cc, 0x222233, 0.5));
 
-        // Hemisphere — sky/ground
-        const hemi = new THREE.HemisphereLight(0x7799cc, 0x222233, 0.5);
-        scene.add(hemi);
-
-        // Main directional (warm sun from upper-right)
         const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
         sun.position.set(600, 1200, 400);
         sun.castShadow = true;
@@ -133,26 +173,16 @@ export default function CityScene() {
         sun.shadow.bias = -0.0005;
         scene.add(sun);
 
-        // Cool fill from opposite side
-        const fill = new THREE.DirectionalLight(0x6688aa, 0.4);
-        fill.position.set(-500, 600, -500);
-        scene.add(fill);
-
-        // Subtle rim light from behind
-        const rim = new THREE.DirectionalLight(0x4455aa, 0.2);
-        rim.position.set(0, 400, -800);
-        scene.add(rim);
+        scene.add(new THREE.DirectionalLight(0x6688aa, 0.4).translateX(-500).translateY(600).translateZ(-500));
+        scene.add(new THREE.DirectionalLight(0x4455aa, 0.2).translateY(400).translateZ(-800));
     }
 
-    // Ground
     function setupGround(scene) {
-        const groundGeom = new THREE.PlaneGeometry(20000, 20000);
-        const groundMat = new THREE.MeshPhongMaterial({
-            color: 0x0c0c16,
-        });
-        const ground = new THREE.Mesh(groundGeom, groundMat);
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(20000, 20000),
+            new THREE.MeshPhongMaterial({ color: 0x0c0c16 })
+        );
         ground.rotation.x = -Math.PI / 2;
-        ground.position.y = 0;
         ground.receiveShadow = true;
         ground.name = 'ground';
         scene.add(ground);
@@ -174,24 +204,26 @@ export default function CityScene() {
         const features = cityData.features;
         if (features.length === 0) return;
 
-        // Create city group
         const cityGroup = new THREE.Group();
         cityGroup.name = 'city';
 
-        // Build geometry layers
+        // Build named layer groups
         const buildings = createBuildingGroup(features);
+        buildings.name = 'buildings';
         cityGroup.add(buildings);
 
         const roads = createRoadGroup(features);
+        roads.name = 'roads';
         cityGroup.add(roads);
 
         const amenities = createAmenityGroup(features);
+        amenities.name = 'amenities';
         cityGroup.add(amenities);
 
         scene.add(cityGroup);
         cityGroupRef.current = cityGroup;
 
-        // Auto-fit camera to city bounds
+        // Auto-fit camera
         const box = new THREE.Box3().setFromObject(cityGroup);
         if (!box.isEmpty() && isFinite(box.min.x)) {
             const size = box.getSize(new THREE.Vector3());
@@ -209,10 +241,22 @@ export default function CityScene() {
                 controlsRef.current.update();
             }
         }
-
     }, [cityData]);
 
-    // Dispose GPU resources
+    // Layer visibility toggle
+    useEffect(() => {
+        if (!cityGroupRef.current) return;
+        const group = cityGroupRef.current;
+
+        const buildingsGroup = group.getObjectByName('buildings');
+        const roadsGroup = group.getObjectByName('roads');
+        const amenitiesGroup = group.getObjectByName('amenities');
+
+        if (buildingsGroup) buildingsGroup.visible = layers.buildings;
+        if (roadsGroup) roadsGroup.visible = layers.roads;
+        if (amenitiesGroup) amenitiesGroup.visible = layers.amenities;
+    }, [layers]);
+
     function disposeGroup(group) {
         group.traverse((obj) => {
             if (obj.geometry) obj.geometry.dispose();
@@ -226,7 +270,6 @@ export default function CityScene() {
         });
     }
 
-    // Initialize scene on mount
     useEffect(() => {
         const cleanup = initScene();
         return cleanup;
@@ -241,6 +284,7 @@ export default function CityScene() {
                 height: '100%',
                 position: 'absolute',
                 inset: 0,
+                cursor: 'grab',
             }}
         />
     );

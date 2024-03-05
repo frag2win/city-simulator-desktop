@@ -850,3 +850,160 @@ body {
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
+
+/* ──────────────────────────────────────────────
+   Entity Info Panel — right-side slide-in
+   ────────────────────────────────────────────── */
+
+.entity-panel {
+  position: absolute;
+  top: 60px;
+  right: 12px;
+  width: 280px;
+  background: rgba(18, 18, 26, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  animation: slideInRight 0.25s ease-out;
+  overflow: hidden;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.entity-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.entity-panel__icon {
+  font-size: 1.2rem;
+}
+
+.entity-panel__title {
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-panel__close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.entity-panel__close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.entity-panel__body {
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.entity-panel__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.entity-panel__label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.entity-panel__value {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.entity-panel__footer {
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.entity-panel__link {
+  font-size: var(--text-xs);
+  color: var(--accent-secondary);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.entity-panel__link:hover {
+  color: var(--accent-primary);
+  text-decoration: underline;
+}
+
+/* ──────────────────────────────────────────────
+   Layer Toggles
+   ────────────────────────────────────────────── */
+
+.layer-toggles {
+  display: flex;
+  gap: 2px;
+}
+
+.layer-toggle {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.layer-toggle:hover {
+  opacity: 0.7;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.layer-toggle.active {
+  opacity: 1;
+  filter: none;
+  border-color: var(--accent-primary);
+  background: var(--accent-glow);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* ──────────────────────────────────────────────
+   HUD Divider
+   ────────────────────────────────────────────── */
+
+.hud__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
