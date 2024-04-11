@@ -114,9 +114,12 @@ export function createBuildingGroup(features) {
     if (buildings.length === 0) return group;
 
     let created = 0;
-    let extruded = 0;
     let fallbacks = 0;
     let skipped = 0;
+
+    const instances = [];
+    let totalVertices = 0;
+    let totalIndices = 0;
 
     for (const feature of buildings) {
         const coords = feature.geometry.coordinates;
@@ -140,7 +143,6 @@ export function createBuildingGroup(features) {
                 // Validate: reject geometry with NaN/Infinity — prevents bbox corruption
                 if (isGeometryValid(extGeom)) {
                     geom = extGeom;
-                    extruded++;
                 } else {
                     extGeom.dispose();
                 }
@@ -154,31 +156,54 @@ export function createBuildingGroup(features) {
             fallbacks++;
         }
 
-        const color = getBuildingColor(height);
-        const mat = new THREE.MeshPhongMaterial({
-            color,
-            emissive: new THREE.Color(0x223344),
-            emissiveIntensity: 0.4,
-            flatShading: true,
-            shininess: 30,
-            side: THREE.DoubleSide,
-        });
+        if (geom) {
+            geom.computeBoundingBox();
+            geom.computeBoundingSphere();
 
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+            // Default BoxGeometry generated might not have indices natively in some paths, so ensure it
+            const vCount = geom.attributes.position.count;
+            const iCount = geom.index ? geom.index.count : vCount;
 
-        // Edge wireframe for visual clarity
-        const edgesGeom = new THREE.EdgesGeometry(geom);
-        const edgesMat = new THREE.LineBasicMaterial({
-            color: EDGE_COLOR,
-            transparent: true,
-            opacity: 0.25,
-        });
-        const edges = new THREE.LineSegments(edgesGeom, edgesMat);
-        mesh.add(edges);
+            instances.push({ feature, geom, height, levels });
+            totalVertices += vCount;
+            totalIndices += iCount;
+        } else {
+            skipped++;
+        }
+    }
 
-        mesh.userData = {
+    if (instances.length === 0) return group;
+
+    const mat = new THREE.MeshPhongMaterial({
+        color: 0xffffff, // White base, instance colors applied
+        emissive: new THREE.Color(0x223344),
+        emissiveIntensity: 0.4,
+        flatShading: true,
+        shininess: 30,
+        side: THREE.DoubleSide,
+    });
+
+    // 1. Create BatchedMesh for Building Solids
+    const batchedMesh = new THREE.BatchedMesh(instances.length, totalVertices, totalIndices, mat);
+    batchedMesh.name = 'buildings-solid';
+    batchedMesh.castShadow = true;
+    batchedMesh.receiveShadow = true;
+    batchedMesh.userData = {
+        type: 'buildings_batch',
+        instances: {} // Map batchId -> feature data
+    };
+
+    const edgeGeometries = [];
+
+    for (let i = 0; i < instances.length; i++) {
+        const { feature, geom, height, levels } = instances[i];
+
+        const geometryId = batchedMesh.addGeometry(geom);
+        const instanceId = batchedMesh.addInstance(geometryId);
+
+        batchedMesh.setColorAt(instanceId, getBuildingColor(height));
+
+        batchedMesh.userData.instances[instanceId] = {
             type: 'building',
             osm_id: feature.properties?.osm_id,
             osm_element_type: feature.properties?.osm_element_type,
@@ -188,10 +213,37 @@ export function createBuildingGroup(features) {
             address: feature.properties?.address,
             height,
             levels,
+            originalColor: getBuildingColor(height).clone(),
         };
 
-        group.add(mesh);
+        // Collect edge geometry
+        const edgesGeom = new THREE.EdgesGeometry(geom);
+        edgeGeometries.push(edgesGeom);
+
+        geom.dispose(); // Free RAM immediately
         created++;
     }
+
+    group.add(batchedMesh);
+
+    // 2. Create massively merged LineSegments for Wireframes
+    if (edgeGeometries.length > 0) {
+        try {
+            const mergedEdges = mergeGeometries(edgeGeometries, false);
+            const edgesMat = new THREE.LineBasicMaterial({
+                color: EDGE_COLOR,
+                transparent: true,
+                opacity: 0.25,
+            });
+            const edgesLines = new THREE.LineSegments(mergedEdges, edgesMat);
+            group.add(edgesLines);
+
+            for (const eg of edgeGeometries) eg.dispose(); // Free RAM
+        } catch (err) {
+            console.error('[buildings] Failed to merge edges:', err);
+        }
+    }
+
+    console.log(`[buildings] Generated ${created} buildings (batched). Fallbacks: ${fallbacks}. Skipped: ${skipped}`);
     return group;
 }

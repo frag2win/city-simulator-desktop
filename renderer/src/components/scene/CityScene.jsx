@@ -146,8 +146,13 @@ export default function CityScene() {
             );
 
             if (highlightRef.current && originalColorRef.current) {
-                highlightRef.current.material.color.copy(originalColorRef.current);
-                highlightRef.current.material.emissive?.setHex(0x000000);
+                const hMesh = highlightRef.current.mesh;
+                if (hMesh.isBatchedMesh && highlightRef.current.batchId !== undefined) {
+                    hMesh.setColorAt(highlightRef.current.batchId, originalColorRef.current);
+                } else if (hMesh.material) {
+                    hMesh.material.color.copy(originalColorRef.current);
+                    hMesh.material.emissive?.setHex(0x000000);
+                }
                 highlightRef.current = null;
                 originalColorRef.current = null;
             }
@@ -155,11 +160,24 @@ export default function CityScene() {
             const hit = intersects.find(i => i.object?.userData?.type);
             if (hit) {
                 const mesh = hit.object;
-                originalColorRef.current = mesh.material.color.clone();
-                highlightRef.current = mesh;
-                mesh.material.color.setHex(0x44aaff);
-                if (mesh.material.emissive) mesh.material.emissive.setHex(0x112244);
-                setSelectedEntity(mesh.userData);
+
+                if (mesh.isBatchedMesh && hit.batchId !== undefined) {
+                    const originalColor = new THREE.Color();
+                    mesh.getColorAt(hit.batchId, originalColor);
+                    originalColorRef.current = originalColor;
+                    highlightRef.current = { mesh, batchId: hit.batchId };
+
+                    mesh.setColorAt(hit.batchId, new THREE.Color(0x44aaff));
+
+                    const entityData = mesh.userData.instances[hit.batchId];
+                    setSelectedEntity(entityData);
+                } else {
+                    originalColorRef.current = mesh.material.color.clone();
+                    highlightRef.current = { mesh };
+                    mesh.material.color.setHex(0x44aaff);
+                    if (mesh.material.emissive) mesh.material.emissive.setHex(0x112244);
+                    setSelectedEntity(mesh.userData);
+                }
             } else {
                 setSelectedEntity(null);
             }
