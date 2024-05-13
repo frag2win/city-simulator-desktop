@@ -111,7 +111,7 @@ export default function CityScene() {
     // Lights — cinematic blue-tinted cityscape lighting
     function setupLights(scene) {
         // Ambient — cool blue base
-        const ambient = new THREE.AmbientLight(0x8899bb, 0.6);
+        const ambient = new THREE.AmbientLight(0xccccff, 0.7);
         scene.add(ambient);
 
         // Hemisphere — sky/ground

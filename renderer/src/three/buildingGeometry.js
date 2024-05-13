@@ -6,10 +6,10 @@ import * as THREE from 'three';
 
 // Height-based color palette (HSL-tuned blue-gray tones)
 function getBuildingColor(height) {
-    if (height <= 8) return new THREE.Color().setHSL(0.6, 0.12, 0.42); // Low — dark slate
-    if (height <= 20) return new THREE.Color().setHSL(0.58, 0.15, 0.48); // Medium — steel
-    if (height <= 40) return new THREE.Color().setHSL(0.56, 0.18, 0.55); // Tall — lighter steel
-    return new THREE.Color().setHSL(0.54, 0.22, 0.65); // High-rise — bright steel
+    if (height <= 8) return new THREE.Color().setHSL(0.6, 0.15, 0.55); // Low — slate
+    if (height <= 20) return new THREE.Color().setHSL(0.58, 0.18, 0.62); // Medium — steel
+    if (height <= 40) return new THREE.Color().setHSL(0.56, 0.22, 0.68); // Tall — lighter
+    return new THREE.Color().setHSL(0.54, 0.25, 0.75); // High-rise — bright
 }
 
 const EDGE_COLOR = new THREE.Color(0x1a1a2e);
@@ -58,6 +58,7 @@ export function createBuildingGroup(features) {
             color,
             flatShading: true,
             shininess: 30,
+            side: THREE.DoubleSide,
         });
 
         const mesh = new THREE.Mesh(geom, mat);
