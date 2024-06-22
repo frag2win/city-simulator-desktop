@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import useCityStore from '../../store/cityStore';
-import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon } from './Icons';
+import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon, WaterIcon } from './Icons';
 
 export default function LayerToggles() {
     const { layers, toggleLayer } = useCityStore();
@@ -31,6 +31,14 @@ export default function LayerToggles() {
                 title="Toggle amenities"
             >
                 <PinIcon />
+            </button>
+
+            <button
+                className={`layer-toggle ${layers.water ? 'active' : ''}`}
+                onClick={() => toggleLayer('water')}
+                title="Toggle hydrology"
+            >
+                <WaterIcon />
             </button>
 
             <button

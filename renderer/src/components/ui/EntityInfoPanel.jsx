@@ -34,7 +34,7 @@ export default function EntityInfoPanel() {
     if (!selectedEntity) return null;
 
     const {
-        type, osm_id, name, display_name,
+        type, osm_id, osm_element_type, name, display_name,
         height, levels, building_type, address,
         highway_type, amenity, surface, lanes,
     } = selectedEntity;
@@ -140,7 +140,7 @@ export default function EntityInfoPanel() {
             <div className="entity-panel__footer">
                 <a
                     className="entity-panel__link"
-                    href={`https://www.openstreetmap.org/${type === 'building' ? 'way' : type === 'road' ? 'way' : 'node'}/${osm_id}`}
+                    href={`https://www.openstreetmap.org/${osm_element_type || (type === 'building' ? 'way' : type === 'road' ? 'way' : 'node')}/${osm_id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                 >

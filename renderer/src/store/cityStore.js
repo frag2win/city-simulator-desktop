@@ -34,6 +34,7 @@ const useCityStore = create((set, get) => ({
         buildings: true,
         roads: true,
         amenities: true,
+        water: true,
         heatmap: false,
     },
 

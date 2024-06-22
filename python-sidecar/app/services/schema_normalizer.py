@@ -46,24 +46,30 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
         logger.warning("No elements in Overpass response")
         return {"type": "FeatureCollection", "features": [], "metadata": {"feature_count": 0}}
 
-    # Step 1: Build node index
+    # Step 1: Build node and way indices
     nodes = {}
-    ways = []
+    ways_dict = {}
+    features_to_process = []
     for el in elements:
         if el["type"] == "node":
             nodes[el["id"]] = (el.get("lon", 0), el.get("lat", 0))
             # If it has tags, it might be a POI (amenity, shop, etc.)
             if el.get("tags"):
-                ways.append(el)  # Process tagged nodes as features too
+                features_to_process.append(el)
         elif el["type"] == "way":
-            ways.append(el)
+            ways_dict[el["id"]] = el
+            if el.get("tags"):
+                features_to_process.append(el)
+        elif el["type"] == "relation":
+            if el.get("tags", {}).get("type") == "multipolygon" and el.get("tags"):
+                features_to_process.append(el)
 
-    logger.info(f"Node index: {len(nodes)} nodes, {len(ways)} features to process")
+    logger.info(f"Node index: {len(nodes)} nodes, {len(ways_dict)} ways, {len(features_to_process)} features to process")
 
     # Step 2: Convert to GeoJSON features
     features = []
-    for i, el in enumerate(ways):
-        feature_or_list = _convert_element(el, nodes)
+    for i, el in enumerate(features_to_process):
+        feature_or_list = _convert_element(el, nodes, ways_dict)
         if feature_or_list:
             if isinstance(feature_or_list, list):
                 features.extend(feature_or_list)
@@ -105,7 +111,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
     }
 
 
-def _convert_element(el: dict, nodes: dict) -> Optional[dict]:
+def _convert_element(el: dict, nodes: dict, ways_dict: dict) -> Optional[dict]:
     """Convert a single Overpass element to a GeoJSON feature."""
     tags = el.get("tags", {})
     el_type = el["type"]
@@ -154,7 +160,7 @@ def _convert_element(el: dict, nodes: dict) -> Optional[dict]:
             if not segments:
                 return None
 
-            properties = _normalize_properties(osm_id, category, tags)
+            properties = _normalize_properties(osm_id, category, tags, el_type)
 
             if len(segments) == 1:
                 return {
@@ -180,17 +186,104 @@ def _convert_element(el: dict, nodes: dict) -> Optional[dict]:
                         "properties": seg_props,
                     })
                 return multi_features
+    elif el_type == "relation":
+        outer_ways = []
+        inner_ways = []
+        for member in el.get("members", []):
+            if member["type"] == "way" and member["ref"] in ways_dict:
+                way_el = ways_dict[member["ref"]]
+                coords = [list(nodes[nid]) for nid in way_el.get("nodes", []) if nid in nodes]
+                if coords:
+                    role = member.get("role", "outer")
+                    if role == "inner":
+                        inner_ways.append(coords)
+                    else:
+                        outer_ways.append(coords)
+                        
+        outer_rings = _stitch_ways(outer_ways)
+        inner_rings = _stitch_ways(inner_ways)
+        
+        polygons = []
+        for outer in outer_rings:
+            if len(outer) >= 4:
+                # GeoJSON Polygon mapping: [outer_ring, inner1, inner2...]
+                poly = [outer]
+                poly.extend([inner for inner in inner_rings if len(inner) >= 4])
+                polygons.append(poly)
+                
+        if not polygons:
+            return None
+            
+        properties = _normalize_properties(osm_id, category, tags, el_type)
+        if len(polygons) == 1:
+            geometry = {"type": "Polygon", "coordinates": polygons[0]}
+        else:
+            geometry = {"type": "MultiPolygon", "coordinates": polygons}
+            
+        return {
+            "type": "Feature",
+            "geometry": geometry,
+            "properties": properties,
+        }
     else:
         return None
 
     # Build normalized properties for polygons and points
-    properties = _normalize_properties(osm_id, category, tags)
+    properties = _normalize_properties(osm_id, category, tags, el_type)
 
     return {
         "type": "Feature",
         "geometry": geometry,
         "properties": properties,
     }
+
+
+def _stitch_ways(ways: list) -> list:
+    """Stitch a sequence of way segments into complete rings."""
+    if not ways: return []
+    rings = []
+    pool = list(ways)
+    
+    while pool:
+        current_ring = list(pool.pop(0))
+        
+        while True:
+            # Reached a closed ring?
+            if current_ring[0] == current_ring[-1] and len(current_ring) > 2:
+                rings.append(current_ring)
+                break
+                
+            merged = False
+            for i in range(len(pool)):
+                w = pool[i]
+                if current_ring[-1] == w[0]:
+                    current_ring.extend(w[1:])
+                    pool.pop(i)
+                    merged = True
+                    break
+                elif current_ring[-1] == w[-1]:
+                    current_ring.extend(reversed(w[:-1]))
+                    pool.pop(i)
+                    merged = True
+                    break
+                elif current_ring[0] == w[-1]:
+                    current_ring = w[:-1] + current_ring
+                    pool.pop(i)
+                    merged = True
+                    break
+                elif current_ring[0] == w[0]:
+                    current_ring = list(reversed(w[1:])) + current_ring
+                    pool.pop(i)
+                    merged = True
+                    break
+                    
+            if not merged:
+                # Close it forcibly if unclosed due to bad mapping
+                if current_ring[0] != current_ring[-1]:
+                    current_ring.append(current_ring[0])
+                rings.append(current_ring)
+                break
+    return rings
 
 
 def _categorize(tags: dict) -> Optional[str]:
@@ -201,7 +294,7 @@ def _categorize(tags: dict) -> Optional[str]:
         return "highway"
     if "landuse" in tags:
         return "landuse"
-    if "natural" in tags and tags["natural"] == "water":
+    if "natural" in tags and tags["natural"] in ("water", "coastline"):
         return "water"
     if "waterway" in tags:
         return "water"
@@ -310,11 +403,12 @@ def _generate_road_name(osm_id: int, tags: dict, highway_type: str) -> str:
     return type_label
 
 
-def _normalize_properties(osm_id: int, category: str, tags: dict) -> dict:
+def _normalize_properties(osm_id: int, category: str, tags: dict, el_type: str = "node") -> dict:
     """Build normalized properties dict with defaults."""
     props = {
         "osm_id": osm_id,
         "osm_type": category,
+        "osm_element_type": el_type,
         "name": tags.get("name"),
         "tags": tags,
     }
@@ -346,6 +440,11 @@ def _normalize_properties(osm_id: int, category: str, tags: dict) -> dict:
 
     elif category == "landuse":
         props["landuse"] = tags.get("landuse")
+
+    elif category == "water":
+        props["water_type"] = tags.get("waterway") or tags.get("natural", "water")
+        if "width" in tags:
+            props["width"] = _safe_float(tags["width"])
 
     elif category == "amenity":
         props["amenity"] = tags.get("amenity")

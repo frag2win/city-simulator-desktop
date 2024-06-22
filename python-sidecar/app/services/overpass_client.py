@@ -39,7 +39,11 @@ def build_overpass_query(bbox_str: str) -> str:
 
   // Water bodies
   way["natural"="water"](if: is_closed());
+  relation["natural"="water"]["type"="multipolygon"];
   way["waterway"];
+  way["waterway"="riverbank"](if: is_closed());
+  relation["waterway"="riverbank"]["type"="multipolygon"];
+  way["natural"="coastline"];
 
   // Amenities
   node["amenity"];

@@ -181,6 +181,7 @@ export function createBuildingGroup(features) {
         mesh.userData = {
             type: 'building',
             osm_id: feature.properties?.osm_id,
+            osm_element_type: feature.properties?.osm_element_type,
             name: feature.properties?.name,
             display_name: feature.properties?.display_name || feature.properties?.name,
             building_type: feature.properties?.building_type,

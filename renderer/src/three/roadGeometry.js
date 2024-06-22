@@ -55,15 +55,18 @@ export function createRoadGroup(features) {
         if (!geom) continue;
 
         if (!buckets[type]) buckets[type] = [];
-        buckets[type].push({ geom, userData: {
-            type: 'road',
-            osm_id: road.properties?.osm_id,
-            name: road.properties?.name,
-            display_name: road.properties?.display_name || road.properties?.name,
-            highway_type: type,
-            surface: road.properties?.surface,
-            lanes: road.properties?.lanes,
-        }});
+        buckets[type].push({
+            geom, userData: {
+                type: 'road',
+                osm_id: road.properties?.osm_id,
+                osm_element_type: road.properties?.osm_element_type,
+                name: road.properties?.name,
+                display_name: road.properties?.display_name || road.properties?.name,
+                highway_type: type,
+                surface: road.properties?.surface,
+                lanes: road.properties?.lanes,
+            }
+        });
     }
 
     // Render each road as its own mesh so we keep per-road metadata

@@ -610,6 +610,27 @@ mycity.city  (zip archive)
 ### Versioning Policy
 The `format_version` field enables forward compatibility. If a newer app version opens an older `.city` file, it runs a migration transform. If an older app opens a newer format version, it displays a "please update the app" error rather than silently loading corrupt state.
 
+## 16. Future Roadmap — v2.0 Expansion
+
+Phase 1 (v1.0) successfully established the core Engine, Desktop Shell, local SpatiaLite caching, and Layer III Human-Built Infrastructure (Buildings and Roads). 
+
+The project has now officially transitioned into **Phase 2 (v2.0)**. 
+
+### 16.1 The v2.0 Layer Expansion
+
+The engine will be expanded into 8 discrete structural layers, executed sequentially to maintain architectural stability:
+
+- **Layer I:** Terrain (Base elevation mesh)
+- **Layer II:** Hydrology (Rivers, Lakes, Oceans) — *Currently in Active Development (Phase 2)*
+- **Layer III (Expansion):** Railways, Aviation, Maritime, Power, Zoning
+- **Layer IV:** Vegetation (Forests, Land Cover)
+- **Layer V:** Subsurface (Tunnels, Utilities, X-Ray Mode)
+- **Layer VI:** Atmosphere (Wind, AQI, Environmental data)
+- **Layer VII:** Simulation (A* Pathfinding, Event Propagation)
+- **Layer VIII:** Temporal (Historical OSM Snapshots)
+
+> For full technical requirements of the expanded layers, please refer to the dedicated **`City_Simulator_Desktop_PRD_PHASE2.md`** document.
+
 ---
 
 *— END OF DOCUMENT —*

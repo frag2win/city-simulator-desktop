@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createBuildingGroup } from '../../three/buildingGeometry';
 import { createRoadGroup } from '../../three/roadGeometry';
+import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
 import { DayNightCycle } from '../../three/dayNightCycle';
 import { VehicleAgents } from '../../three/vehicleAgents';
@@ -305,6 +306,10 @@ export default function CityScene() {
         roads.name = 'roads';
         cityGroup.add(roads);
 
+        const water = createWaterGroup(features);
+        water.name = 'water';
+        cityGroup.add(water);
+
         const amenities = createAmenityGroup(features);
         amenities.name = 'amenities';
         cityGroup.add(amenities);
@@ -415,9 +420,11 @@ export default function CityScene() {
         const g = cityGroupRef.current;
         const b = g.getObjectByName('buildings');
         const r = g.getObjectByName('roads');
+        const w = g.getObjectByName('water');
         const a = g.getObjectByName('amenities');
         if (b) b.visible = layers.buildings;
         if (r) r.visible = layers.roads;
+        if (w) w.visible = layers.water;
         if (a) a.visible = layers.amenities;
         if (heatmapRef.current) heatmapRef.current.setVisible(!!layers.heatmap);
     }, [layers]);
