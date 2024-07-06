@@ -4,11 +4,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createBuildingGroup } from '../../three/buildingGeometry';
 import { createRoadGroup } from '../../three/roadGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
+import { DayNightCycle } from '../../three/dayNightCycle';
+import { VehicleAgents } from '../../three/vehicleAgents';
+import { PedestrianAgents } from '../../three/pedestrianAgents';
 import useCityStore from '../../store/cityStore';
 
 /**
- * CityScene — Main Three.js 3D viewport.
- * Renders buildings, roads, and amenities with raycasting selection.
+ * CityScene — Three.js 3D viewport with agent simulation.
  */
 export default function CityScene() {
     const containerRef = useRef(null);
@@ -18,14 +20,30 @@ export default function CityScene() {
     const controlsRef = useRef(null);
     const animationRef = useRef(null);
     const cityGroupRef = useRef(null);
+    const clockRef = useRef(new THREE.Clock());
+
+    // Simulation refs
+    const dayNightRef = useRef(null);
+    const vehiclesRef = useRef(null);
+    const pedsRef = useRef(null);
+
     const raycasterRef = useRef(new THREE.Raycaster());
     const mouseRef = useRef(new THREE.Vector2());
-    const highlightRef = useRef(null);         // currently highlighted mesh
-    const originalColorRef = useRef(null);     // original color before highlight
+    const highlightRef = useRef(null);
+    const originalColorRef = useRef(null);
 
-    const { cityData, layers, setSelectedEntity } = useCityStore();
+    const storeRef = useRef(useCityStore.getState());
 
-    // Initialize Three.js scene
+    // Subscribe to store changes (non-reactive, for animation loop)
+    useEffect(() => {
+        const unsub = useCityStore.subscribe((state) => {
+            storeRef.current = state;
+        });
+        return unsub;
+    }, []);
+
+    const { cityData, layers, setSelectedEntity, setTimeOfDay, setAgentCounts } = useCityStore();
+
     const initScene = useCallback(() => {
         if (!containerRef.current) return;
 
@@ -33,19 +51,16 @@ export default function CityScene() {
         const width = container.clientWidth;
         const height = container.clientHeight;
 
-        // Scene
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x080810);
         scene.fog = new THREE.FogExp2(0x080810, 0.00003);
         sceneRef.current = scene;
 
-        // Camera
         const camera = new THREE.PerspectiveCamera(50, width / height, 0.5, 100000);
         camera.position.set(500, 600, 500);
         camera.lookAt(0, 0, 0);
         cameraRef.current = camera;
 
-        // Renderer
         const renderer = new THREE.WebGLRenderer({
             antialias: true,
             alpha: false,
@@ -60,7 +75,6 @@ export default function CityScene() {
         container.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
-        // Controls
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
@@ -71,23 +85,20 @@ export default function CityScene() {
         controls.update();
         controlsRef.current = controls;
 
-        // Lights
         setupLights(scene);
         setupGround(scene);
 
-        // Grid
         const grid = new THREE.GridHelper(8000, 160, 0x161625, 0x101018);
         grid.position.y = 0.05;
         scene.add(grid);
 
-        // Click handler for entity selection
+        // Click handler
         const handleClick = (event) => {
             const rect = container.getBoundingClientRect();
             mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
             raycasterRef.current.setFromCamera(mouseRef.current, camera);
-
             if (!cityGroupRef.current) return;
 
             const intersects = raycasterRef.current.intersectObjects(
@@ -95,7 +106,6 @@ export default function CityScene() {
                 false
             );
 
-            // Reset previous highlight
             if (highlightRef.current && originalColorRef.current) {
                 highlightRef.current.material.color.copy(originalColorRef.current);
                 highlightRef.current.material.emissive?.setHex(0x000000);
@@ -103,27 +113,20 @@ export default function CityScene() {
                 originalColorRef.current = null;
             }
 
-            // Find first hit with userData
             const hit = intersects.find(i => i.object?.userData?.type);
             if (hit) {
                 const mesh = hit.object;
-                // Highlight selected entity
                 originalColorRef.current = mesh.material.color.clone();
                 highlightRef.current = mesh;
                 mesh.material.color.setHex(0x44aaff);
-                if (mesh.material.emissive) {
-                    mesh.material.emissive.setHex(0x112244);
-                }
-                // Push selection to store
+                if (mesh.material.emissive) mesh.material.emissive.setHex(0x112244);
                 setSelectedEntity(mesh.userData);
             } else {
                 setSelectedEntity(null);
             }
         };
-
         container.addEventListener('click', handleClick);
 
-        // Resize
         const handleResize = () => {
             if (!container) return;
             const w = container.clientWidth;
@@ -134,12 +137,39 @@ export default function CityScene() {
         };
         window.addEventListener('resize', handleResize);
 
-        // Animation loop
+        // Animation loop with simulation updates
+        let frameCount = 0;
         const animate = () => {
             animationRef.current = requestAnimationFrame(animate);
+            const dt = clockRef.current.getDelta();
+            const store = storeRef.current;
+            const speed = store.isPlaying ? store.simSpeed : 0;
+
             controls.update();
+
+            // Update simulation systems
+            if (dayNightRef.current && speed > 0) {
+                dayNightRef.current.update(dt, speed);
+            }
+            if (vehiclesRef.current && speed > 0) {
+                vehiclesRef.current.update(dt, speed);
+            }
+            if (pedsRef.current && speed > 0) {
+                pedsRef.current.update(dt, speed);
+            }
+
+            // Push time-of-day to store every 30 frames
+            frameCount++;
+            if (frameCount % 30 === 0 && dayNightRef.current) {
+                setTimeOfDay({
+                    time: dayNightRef.current.getTimeString(),
+                    icon: dayNightRef.current.getIcon(),
+                });
+            }
+
             renderer.render(scene, camera);
         };
+        clockRef.current.start();
         animate();
 
         return () => {
@@ -152,9 +182,8 @@ export default function CityScene() {
                 container.removeChild(renderer.domElement);
             }
         };
-    }, [setSelectedEntity]);
+    }, [setSelectedEntity, setTimeOfDay]);
 
-    // Lights
     function setupLights(scene) {
         scene.add(new THREE.AmbientLight(0xccccff, 0.7));
         scene.add(new THREE.HemisphereLight(0x7799cc, 0x222233, 0.5));
@@ -173,8 +202,13 @@ export default function CityScene() {
         sun.shadow.bias = -0.0005;
         scene.add(sun);
 
-        scene.add(new THREE.DirectionalLight(0x6688aa, 0.4).translateX(-500).translateY(600).translateZ(-500));
-        scene.add(new THREE.DirectionalLight(0x4455aa, 0.2).translateY(400).translateZ(-800));
+        const fill = new THREE.DirectionalLight(0x6688aa, 0.4);
+        fill.position.set(-500, 600, -500);
+        scene.add(fill);
+
+        const rim = new THREE.DirectionalLight(0x4455aa, 0.2);
+        rim.position.set(0, 400, -800);
+        scene.add(rim);
     }
 
     function setupGround(scene) {
@@ -188,18 +222,19 @@ export default function CityScene() {
         scene.add(ground);
     }
 
-    // Load city data into scene
+    // Load city data + spawn agents
     useEffect(() => {
         if (!sceneRef.current || !cityData?.features) return;
 
         const scene = sceneRef.current;
 
-        // Remove previous city group
+        // Dispose previous
         if (cityGroupRef.current) {
             scene.remove(cityGroupRef.current);
             disposeGroup(cityGroupRef.current);
-            cityGroupRef.current = null;
         }
+        if (vehiclesRef.current) vehiclesRef.current.dispose();
+        if (pedsRef.current) pedsRef.current.dispose();
 
         const features = cityData.features;
         if (features.length === 0) return;
@@ -207,7 +242,6 @@ export default function CityScene() {
         const cityGroup = new THREE.Group();
         cityGroup.name = 'city';
 
-        // Build named layer groups
         const buildings = createBuildingGroup(features);
         buildings.name = 'buildings';
         cityGroup.add(buildings);
@@ -229,15 +263,10 @@ export default function CityScene() {
             const size = box.getSize(new THREE.Vector3());
             const center = box.getCenter(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.z, 200);
-            const dist = maxDim * 0.7; // closer than before
+            const dist = maxDim * 0.7;
 
-            console.log(`[CityScene] Bounds: ${size.x.toFixed(0)}×${size.y.toFixed(0)}×${size.z.toFixed(0)}, Center: ${center.x.toFixed(0)},${center.y.toFixed(0)},${center.z.toFixed(0)}, Dist: ${dist.toFixed(0)}`);
-
-            // Auto-adjust fog for city size
-            if (sceneRef.current?.fog) {
-                const fogDensity = Math.min(0.00008, 2.0 / maxDim);
-                sceneRef.current.fog.density = fogDensity;
-                console.log(`[CityScene] Fog density: ${fogDensity.toFixed(6)}`);
+            if (scene.fog) {
+                scene.fog.density = Math.min(0.00008, 2.0 / maxDim);
             }
 
             if (cameraRef.current && controlsRef.current) {
@@ -250,31 +279,43 @@ export default function CityScene() {
                 controlsRef.current.update();
             }
         }
-    }, [cityData]);
 
-    // Layer visibility toggle
+        // Initialize simulation systems
+        dayNightRef.current = new DayNightCycle(scene);
+
+        const vehicles = new VehicleAgents(scene);
+        vehicles.init(features);
+        vehiclesRef.current = vehicles;
+
+        const peds = new PedestrianAgents(scene);
+        peds.init(features);
+        pedsRef.current = peds;
+
+        setAgentCounts({
+            vehicles: vehicles.getCount(),
+            pedestrians: peds.getCount(),
+        });
+
+    }, [cityData, setAgentCounts]);
+
+    // Layer visibility
     useEffect(() => {
         if (!cityGroupRef.current) return;
-        const group = cityGroupRef.current;
-
-        const buildingsGroup = group.getObjectByName('buildings');
-        const roadsGroup = group.getObjectByName('roads');
-        const amenitiesGroup = group.getObjectByName('amenities');
-
-        if (buildingsGroup) buildingsGroup.visible = layers.buildings;
-        if (roadsGroup) roadsGroup.visible = layers.roads;
-        if (amenitiesGroup) amenitiesGroup.visible = layers.amenities;
+        const g = cityGroupRef.current;
+        const b = g.getObjectByName('buildings');
+        const r = g.getObjectByName('roads');
+        const a = g.getObjectByName('amenities');
+        if (b) b.visible = layers.buildings;
+        if (r) r.visible = layers.roads;
+        if (a) a.visible = layers.amenities;
     }, [layers]);
 
     function disposeGroup(group) {
         group.traverse((obj) => {
             if (obj.geometry) obj.geometry.dispose();
             if (obj.material) {
-                if (Array.isArray(obj.material)) {
-                    obj.material.forEach((m) => m.dispose());
-                } else {
-                    obj.material.dispose();
-                }
+                if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+                else obj.material.dispose();
             }
         });
     }

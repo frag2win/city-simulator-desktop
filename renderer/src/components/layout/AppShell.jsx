@@ -6,6 +6,7 @@ import ProgressModal from '../ui/ProgressModal';
 import CacheManager from '../ui/CacheManager';
 import EntityInfoPanel from '../ui/EntityInfoPanel';
 import LayerToggles from '../ui/LayerToggles';
+import SimulationControls from '../ui/SimulationControls';
 import useCityStore from '../../store/cityStore';
 
 const ipc = window.electronAPI;
@@ -76,6 +77,9 @@ export default function AppShell() {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Simulation controls — bottom-left */}
+                        <SimulationControls />
 
                         {/* Entity info panel (right side) */}
                         <EntityInfoPanel />

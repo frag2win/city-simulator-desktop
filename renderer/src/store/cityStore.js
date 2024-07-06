@@ -27,7 +27,7 @@ const useCityStore = create((set, get) => ({
     showSearch: false,
 
     // ─── Entity Selection ────────────────────
-    selectedEntity: null,   // { type, osm_id, name, height, levels, ... }
+    selectedEntity: null,
 
     // ─── Layer Visibility ────────────────────
     layers: {
@@ -36,6 +36,12 @@ const useCityStore = create((set, get) => ({
         amenities: true,
     },
 
+    // ─── Simulation ──────────────────────────
+    isPlaying: true,
+    simSpeed: 1,
+    timeOfDay: { time: '06:00', icon: '☀️' },
+    agentCounts: { vehicles: 0, pedestrians: 0 },
+
     // ─── Actions ─────────────────────────────
     setShowSearch: (show) => set({ showSearch: show }),
     setShowCacheManager: (show) => set({ showCacheManager: show }),
@@ -43,6 +49,10 @@ const useCityStore = create((set, get) => ({
     toggleLayer: (layer) => set((state) => ({
         layers: { ...state.layers, [layer]: !state.layers[layer] },
     })),
+    setIsPlaying: (playing) => set({ isPlaying: playing }),
+    setSimSpeed: (speed) => set({ simSpeed: speed }),
+    setTimeOfDay: (tod) => set({ timeOfDay: tod }),
+    setAgentCounts: (counts) => set({ agentCounts: counts }),
 
     setCityData: (data) => set({
         cityData: data,

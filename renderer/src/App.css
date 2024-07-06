@@ -875,6 +875,7 @@ body {
     opacity: 0;
     transform: translateX(20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -1006,4 +1007,101 @@ body {
   height: 20px;
   background: var(--border);
   margin: 0 4px;
+}
+
+/* ──────────────────────────────────────────────
+   Simulation Controls — bottom-left bar
+   ────────────────────────────────────────────── */
+
+.sim-controls {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(18, 18, 26, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 12px;
+  z-index: 15;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sim-controls__btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+}
+
+.sim-controls__btn:hover {
+  background: var(--accent-glow);
+}
+
+.sim-controls__btn.playing {
+  border-color: var(--success);
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.sim-controls__speed {
+  display: flex;
+  gap: 1px;
+}
+
+.sim-controls__speed-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sim-controls__speed-btn:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sim-controls__speed-btn.active {
+  color: var(--accent-secondary);
+  border-color: var(--accent-primary);
+  background: var(--accent-glow);
+}
+
+.sim-controls__time {
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  min-width: 64px;
+  text-align: center;
+}
+
+.sim-controls__agents {
+  display: flex;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
