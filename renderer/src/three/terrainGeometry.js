@@ -17,11 +17,11 @@ import * as THREE from 'three';
 /** Lerp between two THREE.Color instances and return a new one. */
 const lerpColor = (a, b, t) => new THREE.Color().lerpColors(a, b, t);
 
-const COL_LOW  = new THREE.Color(0x041830);   // deep dark blue (valleys)
-const COL_MID  = new THREE.Color(0x0a6e6e);   // teal
+const COL_LOW = new THREE.Color(0x041830);   // deep dark blue (valleys)
+const COL_MID = new THREE.Color(0x0a6e6e);   // teal
 const COL_HIGH = new THREE.Color(0x00ffcc);   // bright cyan-green (peaks)
 
-const WIRE_COLOR  = 0x00e5ff;   // main wireframe tint
+const WIRE_COLOR = 0x00e5ff;   // main wireframe tint
 const SOLID_COLOR = 0x030a14;   // dark under-surface
 
 // ── Constants ───────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ export function createTerrainGroup(terrainData, cityBbox) {
     const cosLat = Math.cos(originLat * Math.PI / 180);
 
     // Full extent of the bbox in local metres (same projection as buildings/roads)
-    const totalWidth = (east - west)   * (Math.PI / 180) * EARTH_R * cosLat;
+    const totalWidth = (east - west) * (Math.PI / 180) * EARTH_R * cosLat;
     const totalDepth = (north - south) * (Math.PI / 180) * EARTH_R;
     const halfW = totalWidth / 2;
     const halfD = totalDepth / 2;
@@ -56,10 +56,10 @@ export function createTerrainGroup(terrainData, cityBbox) {
     // Adaptive vertical exaggeration → flat cities (< 20 m Δ) get amplified,
     // but capped so the total vertical relief never exceeds MAX_VERT units.
     const rawExag =
-        elevRange < 5   ? 8.0 :
-        elevRange < 20  ? 4.0 :
-        elevRange < 50  ? 2.5 :
-        elevRange < 150 ? 1.5 : 1.0;
+        elevRange < 5 ? 8.0 :
+            elevRange < 20 ? 4.0 :
+                elevRange < 50 ? 2.5 :
+                    elevRange < 150 ? 1.5 : 1.0;
     const exaggeration = elevRange > 0
         ? Math.min(rawExag, MAX_VERT / elevRange)
         : rawExag;
@@ -68,8 +68,8 @@ export function createTerrainGroup(terrainData, cityBbox) {
     const peakHeight = elevRange * exaggeration;
 
     // ── Build BufferGeometry manually for full control ────────────
-    const verts   = [];   // x, y, z  (float32 ×3)
-    const colors  = [];   // r, g, b  (float32 ×3)
+    const verts = [];   // x, y, z  (float32 ×3)
+    const colors = [];   // r, g, b  (float32 ×3)
     const indices = [];
 
     for (let row = 0; row < resolution; row++) {
@@ -163,14 +163,6 @@ export function createTerrainGroup(terrainData, cityBbox) {
     // whole group slightly below the building ground plane so depth tests
     // keep buildings in front of the wireframe.
     group.position.y = TERRAIN_Y_OFFSET;
-
-    console.log(
-        `[Terrain] ${resolution}×${resolution} grid, ` +
-        `elev ${minElev.toFixed(0)}–${maxElev.toFixed(0)} m ` +
-        `(×${exaggeration} exaggeration, range ${peakHeight.toFixed(0)} units), ` +
-        `extent ${totalWidth.toFixed(0)}×${totalDepth.toFixed(0)} m, ` +
-        `positioned at y=${group.position.y.toFixed(1)}`
-    );
 
     return group;
 }

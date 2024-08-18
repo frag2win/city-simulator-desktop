@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ---------- Height-based color palette (HSL blue-gray tones) ----------
 const HEIGHT_BANDS = [
-    { max: 8,  h: 0.60, s: 0.15, l: 0.55 }, // Low — slate
+    { max: 8, h: 0.60, s: 0.15, l: 0.55 }, // Low — slate
     { max: 20, h: 0.58, s: 0.18, l: 0.62 }, // Medium — steel
     { max: 40, h: 0.56, s: 0.22, l: 0.68 }, // Tall — lighter
     { max: Infinity, h: 0.54, s: 0.25, l: 0.75 }, // High-rise — bright
@@ -192,10 +192,5 @@ export function createBuildingGroup(features) {
         group.add(mesh);
         created++;
     }
-
-    console.log(
-        `[Buildings] ${created} created (${extruded} extruded, ${fallbacks} fallback boxes, ${skipped} skipped) out of ${buildings.length} total`
-    );
-
     return group;
 }

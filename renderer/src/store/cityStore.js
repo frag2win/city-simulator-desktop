@@ -171,9 +171,7 @@ const useCityStore = create((set, get) => ({
                 return;
             }
 
-            console.log('[Store] loadTerrain: fetching terrain for bbox', bbox);
             const result = await api.loadTerrain(bbox, 48);
-            console.log('[Store] loadTerrain: result', result ? { error: result.error, hasData: !!result.data, gridRows: result.data?.grid?.length } : 'null');
             if (result && !result.error && result.data) {
                 set({ terrainData: result.data });
             }

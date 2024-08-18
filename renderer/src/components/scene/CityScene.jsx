@@ -343,7 +343,7 @@ export default function CityScene() {
                 if (!coords) continue;
                 const flat = f.geometry.type === 'Point' ? [coords]
                     : f.geometry.type === 'LineString' ? coords
-                    : f.geometry.type === 'Polygon' ? coords[0] : [];
+                        : f.geometry.type === 'Polygon' ? coords[0] : [];
                 for (const pt of flat) {
                     if (Array.isArray(pt) && isFinite(pt[0]) && isFinite(pt[1])) {
                         if (pt[0] < mnX) mnX = pt[0];
@@ -364,9 +364,6 @@ export default function CityScene() {
             const center = box.getCenter(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.z, 200);
             const dist = maxDim * 0.7;
-
-            console.log(`[CityScene] Camera auto-fit: center=(${center.x.toFixed(0)}, ${center.z.toFixed(0)}), maxDim=${maxDim.toFixed(0)}, dist=${dist.toFixed(0)}`);
-
             if (scene.fog) {
                 scene.fog.density = Math.min(0.00008, 2.0 / maxDim);
             }
