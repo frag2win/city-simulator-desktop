@@ -52,8 +52,8 @@ async def load_city(
     area = bbox_obj.area_km2
     if area < 0.01:
         raise HTTPException(status_code=400, detail=f"Area too small: {area:.4f} km². Minimum is 0.01 km².")
-    if area > 25:
-        raise HTTPException(status_code=400, detail=f"Area too large: {area:.1f} km². Maximum is 25 km².")
+    if area > 150:
+        raise HTTPException(status_code=400, detail=f"Area too large: {area:.1f} km². Maximum is 150 km².")
 
     # Ensure DB is initialized
     await init_db()

@@ -116,7 +116,7 @@ const useCityStore = create((set, get) => ({
             setCityData(result.data || result);
 
             // Kick off terrain loading in the background
-            get().loadTerrain(bbox);
+            // get().loadTerrain(bbox); // TODO: Phase 3
         } catch (err) {
             setError(err.message || 'Unknown error loading city');
         }

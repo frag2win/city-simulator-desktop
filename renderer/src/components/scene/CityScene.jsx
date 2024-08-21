@@ -131,10 +131,6 @@ export default function CityScene() {
         setupLights(scene);
         setupGround(scene);
 
-        const grid = new THREE.GridHelper(8000, 160, 0x161625, 0x101018);
-        grid.position.y = 0.05;
-        scene.add(grid);
-
         // Click handler
         const handleClick = (event) => {
             const rect = container.getBoundingClientRect();
@@ -317,17 +313,29 @@ export default function CityScene() {
         scene.add(cityGroup);
         cityGroupRef.current = cityGroup;
 
-        // Auto-fit camera — try full city group first, fallback to roads-only
-        let box = new THREE.Box3().setFromObject(cityGroup);
-
         const isBoxValid = (b) =>
             !b.isEmpty() &&
             isFinite(b.min.x) && isFinite(b.min.y) && isFinite(b.min.z) &&
             isFinite(b.max.x) && isFinite(b.max.y) && isFinite(b.max.z);
 
-        // If the full bbox is invalid (NaN from bad geometry), try roads only
+        // Auto-fit camera — Focus on human-built structures (buildings + roads)
+        // to avoid snapping the camera far out to cover massive water bodies.
+        let box = new THREE.Box3();
+        box.setFromObject(buildings);
+
+        const roadBox = new THREE.Box3().setFromObject(roads);
+        if (isBoxValid(roadBox)) {
+            box.union(roadBox);
+        }
+
+        // Fallback to entire city group if built structures alone are invalid
         if (!isBoxValid(box)) {
-            console.warn('[CityScene] Full bounding box invalid, falling back to roads-only bbox');
+            box.setFromObject(cityGroup);
+        }
+
+        // If STILL invalid, fallback to roads only
+        if (!isBoxValid(box)) {
+            console.warn('[CityScene] Bounding box invalid, falling back to roads-only bbox');
             box = new THREE.Box3().setFromObject(roads);
         }
 
@@ -378,6 +386,20 @@ export default function CityScene() {
                 setCameraRefs(cameraRef.current, controlsRef.current);
                 setCityBounds(center, dist);
             }
+
+            // Remove old dynamic grid if any
+            const oldGrid = scene.getObjectByName('dynamic-grid');
+            if (oldGrid) scene.remove(oldGrid);
+
+            // Construct perfectly fitted grid
+            // Round to nearest 100 meters to ensure grid lines aren't densely packed
+            const gridDim = Math.ceil(maxDim / 100) * 100;
+            const divisions = Math.floor(gridDim / 50); // 50m squares
+            const grid = new THREE.GridHelper(gridDim, divisions, 0x161625, 0x101018);
+            grid.name = 'dynamic-grid';
+            grid.position.set(center.x, 0.05, center.z);
+            scene.add(grid);
+
         } else {
             console.error('[CityScene] Could not compute valid bounding box — camera not repositioned');
         }
