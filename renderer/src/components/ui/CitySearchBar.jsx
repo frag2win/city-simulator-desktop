@@ -79,10 +79,30 @@ export default function CitySearchBar() {
     const handleSelectCity = (suggestion) => {
         if (suggestion.error) return;
 
+        const lat = parseFloat(suggestion.lat);
+        const lon = parseFloat(suggestion.lon);
+
         // Nominatim bbox = [south, north, west, east]
-        // Our format = N,S,E,W
-        const [south, north, west, east] = suggestion.bbox;
-        const bboxStr = `${north},${south},${east},${west}`;
+        const [south, north, west, east] = suggestion.bbox.map(Number);
+
+        // Calculate area roughly
+        const latDiff = Math.abs(north - south);
+        const lonDiff = Math.abs(east - west);
+        const avgLat = (north + south) / 2;
+        const areaKm2 = (latDiff * 111) * (lonDiff * 111 * Math.cos(avgLat * Math.PI / 180));
+
+        let bboxStr;
+        if (areaKm2 > 20) {
+            // Area too large — auto-crop to ~2km × 2km centered on result point
+            const halfDeg = 0.01; // ~1.1km at equator
+            const cropN = (lat + halfDeg).toFixed(6);
+            const cropS = (lat - halfDeg).toFixed(6);
+            const cropE = (lon + halfDeg).toFixed(6);
+            const cropW = (lon - halfDeg).toFixed(6);
+            bboxStr = `${cropN},${cropS},${cropE},${cropW}`;
+        } else {
+            bboxStr = `${north},${south},${east},${west}`;
+        }
 
         setShowSearch(false);
         setSuggestions([]);
