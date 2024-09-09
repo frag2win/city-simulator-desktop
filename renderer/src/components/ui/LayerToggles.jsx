@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import useCityStore from '../../store/cityStore';
-import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon, WaterIcon } from './Icons';
+import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon, WaterIcon, TrainIcon, ZoneIcon } from './Icons';
 
 export default function LayerToggles() {
     const { layers, toggleLayer } = useCityStore();
@@ -39,6 +39,20 @@ export default function LayerToggles() {
                 title="Toggle hydrology"
             >
                 <WaterIcon />
+            </button>
+            <button
+                className={`layer-toggle ${layers.railways ? 'active' : ''}`}
+                onClick={() => toggleLayer('railways')}
+                title="Toggle transit & railways"
+            >
+                <TrainIcon />
+            </button>
+            <button
+                className={`layer-toggle ${layers.zones ? 'active' : ''}`}
+                onClick={() => toggleLayer('zones')}
+                title="Toggle landuse zoning"
+            >
+                <ZoneIcon />
             </button>
 
             <button

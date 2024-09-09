@@ -92,6 +92,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
     buildings = sum(1 for f in unique_features if f["properties"]["osm_type"] == "building")
     roads = sum(1 for f in unique_features if f["properties"]["osm_type"] == "highway")
     landuse = sum(1 for f in unique_features if f["properties"]["osm_type"] == "landuse")
+    railways = sum(1 for f in unique_features if f["properties"]["osm_type"] == "railway")
     amenities = sum(1 for f in unique_features if f["properties"]["osm_type"] == "amenity")
 
     metadata = {
@@ -99,6 +100,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
         "buildings": buildings,
         "roads": roads,
         "landuse": landuse,
+        "railways": railways,
         "amenities": amenities,
     }
 
@@ -292,6 +294,12 @@ def _categorize(tags: dict) -> Optional[str]:
         return "building"
     if "highway" in tags:
         return "highway"
+    if "railway" in tags:
+        return "railway"
+    if "power" in tags:
+        return "power"
+    if "aeroway" in tags:
+        return "aeroway"
     if "landuse" in tags:
         return "landuse"
     if "natural" in tags and tags["natural"] in ("water", "coastline"):
@@ -437,6 +445,18 @@ def _normalize_properties(osm_id: int, category: str, tags: dict, el_type: str =
         props["surface"] = tags.get("surface")
         props["road_width"] = HIGHWAY_WIDTHS.get(highway_type, 5.0)
         props["display_name"] = _generate_road_name(osm_id, tags, highway_type)
+
+    elif category == "railway":
+        props["railway_type"] = tags.get("railway", "rail")
+        props["electrified"] = tags.get("electrified")
+        props["gauge"] = tags.get("gauge")
+        
+    elif category == "power":
+        props["power_type"] = tags.get("power")
+        props["voltage"] = tags.get("voltage")
+        
+    elif category == "aeroway":
+        props["aeroway_type"] = tags.get("aeroway")
 
     elif category == "landuse":
         props["landuse"] = tags.get("landuse")

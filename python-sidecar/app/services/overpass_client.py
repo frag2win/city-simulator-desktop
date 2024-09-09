@@ -34,8 +34,21 @@ def build_overpass_query(bbox_str: str) -> str:
   // Roads
   way["highway"];
 
-  // Land use
+  // Railways (Phase 3)
+  way["railway"];
+
+  // Land use / Zoning (Phase 3)
   way["landuse"](if: is_closed());
+  relation["landuse"]["type"="multipolygon"];
+
+  // Power & Industrial (Phase 3)
+  way["power"](if: is_closed());
+  relation["power"]["type"="multipolygon"];
+  way["power"="line"];
+
+  // Aviation (Phase 3)
+  way["aeroway"](if: is_closed());
+  relation["aeroway"]["type"="multipolygon"];
 
   // Water bodies
   way["natural"="water"](if: is_closed());

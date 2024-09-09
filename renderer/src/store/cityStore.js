@@ -33,8 +33,10 @@ const useCityStore = create((set, get) => ({
     layers: {
         buildings: true,
         roads: true,
+        railways: true,
         amenities: true,
         water: true,
+        zones: true,
         heatmap: false,
     },
 

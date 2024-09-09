@@ -5,6 +5,8 @@ import { createBuildingGroup } from '../../three/buildingGeometry';
 import { createRoadGroup } from '../../three/roadGeometry';
 import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
+import { createZoneGroup } from '../../three/zoneGeometry';
+import { createRailGroup } from '../../three/railGeometry';
 import { DayNightCycle } from '../../three/dayNightCycle';
 import { VehicleAgents } from '../../three/vehicleAgents';
 import { PedestrianAgents } from '../../three/pedestrianAgents';
@@ -324,6 +326,14 @@ export default function CityScene() {
         water.name = 'water';
         cityGroup.add(water);
 
+        const zones = createZoneGroup(features);
+        zones.name = 'zones';
+        cityGroup.add(zones);
+
+        const railways = createRailGroup(features);
+        railways.name = 'railways';
+        cityGroup.add(railways);
+
         const amenities = createAmenityGroup(features);
         amenities.name = 'amenities';
         cityGroup.add(amenities);
@@ -462,10 +472,16 @@ export default function CityScene() {
         const r = g.getObjectByName('roads');
         const w = g.getObjectByName('water');
         const a = g.getObjectByName('amenities');
+        const z = g.getObjectByName('zones');
+        const rw = g.getObjectByName('railways');
+
         if (b) b.visible = layers.buildings;
         if (r) r.visible = layers.roads;
         if (w) w.visible = layers.water;
         if (a) a.visible = layers.amenities;
+        if (z) z.visible = layers.zones;
+        if (rw) rw.visible = layers.railways;
+
         if (heatmapRef.current) heatmapRef.current.setVisible(!!layers.heatmap);
     }, [layers]);
 

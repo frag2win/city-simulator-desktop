@@ -82,6 +82,28 @@ export const WaterIcon = (props) => (
     </Icon>
 );
 
+/** Railways — train */
+export const TrainIcon = (props) => (
+    <Icon {...props}>
+        <rect x="4" y="3" width="16" height="16" rx="2" ry="2" />
+        <path d="M4 11h16" />
+        <path d="M12 3v8" />
+        <path d="M8 19l-2 3" />
+        <path d="M16 19l2 3" />
+        <path d="M8 15h.01" />
+        <path d="M16 15h.01" />
+    </Icon>
+);
+
+/** Zoning — Map patches */
+export const ZoneIcon = (props) => (
+    <Icon {...props}>
+        <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+        <line x1="9" y1="3" x2="9" y2="18" />
+        <line x1="15" y1="6" x2="15" y2="21" />
+    </Icon>
+);
+
 // ─── Actions ────────────────────────────────────────────
 
 /** Screenshot — camera */
