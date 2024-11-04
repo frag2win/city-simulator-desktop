@@ -1,0 +1,32 @@
+{
+  "name": "city-simulator-desktop",
+  "version": "1.0.0",
+  "description": "Procedural 3D City Simulator — Desktop Application",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:5173 && npm run dev:electron\"",
+    "dev:renderer": "cd renderer && npm run dev",
+    "dev:electron": "electron .",
+    "build:renderer": "cd renderer && npm run build",
+    "build": "npm run build:renderer && electron-builder",
+    "start": "electron .",
+    "lint": "eslint .",
+    "postinstall": "cd renderer && npm install"
+  },
+  "keywords": ["city", "simulator", "3d", "openstreetmap", "electron", "threejs"],
+  "author": "Shubham",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^8.0.3"
+  },
+  "dependencies": {
+    "electron-store": "^10.0.0"
+  },
+  "build": {
+    "extends": "./build/electron-builder.yml"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+renderer/dist/
+python-sidecar/__pycache__/
+python-sidecar/app/__pycache__/
+python-sidecar/app/**/__pycache__/
+python-sidecar/.venv/
+*.pyc
+.env
+*.log

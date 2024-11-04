@@ -1,0 +1,65 @@
+appId: com.citysimulator.desktop
+productName: City Simulator
+copyright: Copyright © 2025
+
+directories:
+  output: ../dist
+  buildResources: .
+
+files:
+  - electron/**/*
+  - renderer/dist/**/*
+  - package.json
+
+extraResources:
+  - from: ../python-sidecar
+    to: python-sidecar
+    filter:
+      - "**/*"
+      - "!__pycache__/**"
+      - "!.venv/**"
+      - "!*.pyc"
+
+# Windows
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: icons/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: City Simulator
+
+# macOS
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: icons/icon.icns
+  category: public.app-category.education
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+
+dmg:
+  title: City Simulator
+
+# Linux
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  icon: icons/icon.png
+  category: Science
+  maintainer: shubham
+
+# File associations
+fileAssociations:
+  - ext: city
+    name: City Simulator File
+    description: City Simulator session file
+    role: Editor
