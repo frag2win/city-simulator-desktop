@@ -101,8 +101,8 @@ function createRoadStrip(feature) {
             // Left and right edge points
             // Map: X = x, Y = 0.2 (road surface), Z = -y
             const idx = vertices.length / 3;
-            vertices.push(x + nx, 0.2, -(y + ny));  // left
-            vertices.push(x - nx, 0.2, -(y - ny));  // right
+            vertices.push(x + nx, 0.5, -(y + ny));  // left
+            vertices.push(x - nx, 0.5, -(y - ny));  // right
 
             if (idx >= 2) {
                 indices.push(idx - 2, idx - 1, idx);
@@ -122,6 +122,9 @@ function createRoadStrip(feature) {
             roughness: 0.9,
             metalness: 0.0,
             side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
         });
 
         const mesh = new THREE.Mesh(geometry, material);
