@@ -65,8 +65,8 @@ export class PedestrianAgents {
         this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.instancedMesh.name = 'pedestrians';
 
-        // Spawn pedestrians
-        const count = Math.min(MAX_PEDESTRIANS, Math.floor(this.waypoints.length * 0.08));
+        // Spawn pedestrians (at least 1 when we have waypoints)
+        const count = Math.min(MAX_PEDESTRIANS, Math.max(1, Math.floor(this.waypoints.length * 0.08)));
         for (let i = 0; i < count; i++) {
             const startIdx = Math.floor(Math.random() * this.waypoints.length);
             const targetIdx = this._pickNearbyTarget(startIdx);
@@ -93,7 +93,9 @@ export class PedestrianAgents {
             this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
         }
 
-        this.instancedMesh.instanceColor.needsUpdate = true;
+        if (this.instancedMesh.instanceColor) {
+            this.instancedMesh.instanceColor.needsUpdate = true;
+        }
         this.scene.add(this.instancedMesh);
         this.active = true;
     }

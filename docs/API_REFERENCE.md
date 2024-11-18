@@ -11,31 +11,38 @@ Auth: `Authorization: Bearer {token}` (token generated per session)
 
 Check if the sidecar is running and ready.
 
+**Headers**: `Authorization: Bearer {token}` (required unless dev mode)
+
 **Response** `200 OK`:
 ```json
 {
   "status": "ok",
-  "service": "city-simulator-sidecar",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "port": 54321
 }
 ```
+
+**Error** `401`: Missing Authorization header  
+**Error** `403`: Invalid token
 
 ---
 
 ## City Data
 
-### `GET /city?south=...&west=...&north=...&east=...`
+### `GET /city?bbox=N,S,E,W`
 
 Load city data for a bounding box. Checks cache first, falls back to Overpass API.
+All coordinates in the response are projected to **local Cartesian meters** (not WGS84).
 
 **Query Parameters**:
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `south` | float | Southern latitude boundary |
-| `west` | float | Western longitude boundary |
-| `north` | float | Northern latitude boundary |
-| `east` | float | Eastern longitude boundary |
+| `bbox` | string | Comma-separated bounding box: `north,south,east,west` |
+
+**Area Limits**:
+- Minimum: 0.01 km²
+- Maximum: 25 km²
 
 **Response** `200 OK`:
 ```json
@@ -58,6 +65,7 @@ Load city data for a bounding box. Checks cache first, falls back to Overpass AP
       }
     }
   ],
+  "bbox": [west, south, east, north],
   "metadata": {
     "feature_count": 4381,
     "buildings": 2374,
@@ -69,12 +77,40 @@ Load city data for a bounding box. Checks cache first, falls back to Overpass AP
 }
 ```
 
-**Coordinate System**: All coordinates in the response are projected to **local Cartesian meters** (not WGS84). Origin is stored in `metadata.origin`.
+**Error Responses**:
 
-**Error** `400`:
+| Status | Condition | Detail |
+|--------|-----------|--------|
+| `400` | Invalid bbox format | `"Invalid bounding box: ..."` |
+| `400` | Area too small (< 0.01 km²) | `"Area too small: ... km². Minimum is 0.01 km²."` |
+| `400` | Area too large (> 25 km²) | `"Area too large: ... km². Maximum is 25 km²."` |
+| `404` | No OSM data in area | `"No data found for this area..."` |
+| `404` | No features after normalization | `"No recognizable features..."` |
+| `502` | Overpass API failure | Error message from upstream |
+
+---
+
+## WebSocket Ingest (Streaming Progress)
+
+### `WS /ws/ingest`
+
+Real-time ingestion with progress updates.
+
+**Client sends**:
 ```json
-{ "detail": "Bounding box area exceeds 25 km² limit" }
+{ "bbox": "N,S,E,W" }
 ```
+
+**Server streams** (multiple messages):
+```json
+{ "stage": "querying", "percent": 10, "message": "Querying Overpass API…" }
+{ "stage": "processing", "percent": 40, "message": "Normalizing OpenStreetMap data…" }
+{ "stage": "building_geometry", "percent": 60, "message": "Projecting coordinates…" }
+{ "stage": "caching", "percent": 85, "message": "Saving to local database…" }
+{ "stage": "complete", "percent": 100, "message": "City loaded successfully", "data": { ... } }
+```
+
+If data is cached, a single `complete` message is sent immediately with `"Loaded from cache"`.
 
 ---
 
@@ -89,7 +125,7 @@ List all cached cities.
 [
   {
     "id": 1,
-    "name": "Colaba, Mumbai",
+    "name": "City @ 18.9200,72.8350",
     "bbox": "18.9,72.8,18.92,72.85",
     "feature_count": 4381,
     "size_mb": 2.34,
@@ -99,7 +135,7 @@ List all cached cities.
 ]
 ```
 
-### `DELETE /city/cache/{id}`
+### `DELETE /city/cache/{cache_id}`
 
 Delete a specific cached city.
 
@@ -107,14 +143,14 @@ Delete a specific cached city.
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `id` | int | Cache entry ID |
+| `cache_id` | int | Cache entry ID |
 
 **Response** `200 OK`:
 ```json
 { "deleted": true }
 ```
 
-**Response** `404`:
+**Error** `404`:
 ```json
 { "detail": "Cache entry not found" }
 ```

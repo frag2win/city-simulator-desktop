@@ -43,7 +43,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
     """
     elements = raw_data.get("elements", [])
     if not elements:
-        logger.warn("No elements in Overpass response")
+        logger.warning("No elements in Overpass response")
         return {"type": "FeatureCollection", "features": [], "metadata": {"feature_count": 0}}
 
     # Step 1: Build node index
@@ -171,6 +171,106 @@ def _categorize(tags: dict) -> Optional[str]:
     return None
 
 
+# Friendly labels for the raw "building" tag values
+_BUILDING_TYPE_LABELS = {
+    "yes": "Building",
+    "residential": "Residential Building",
+    "commercial": "Commercial Building",
+    "industrial": "Industrial Building",
+    "retail": "Retail Building",
+    "apartments": "Apartment Block",
+    "house": "House",
+    "detached": "Detached House",
+    "terrace": "Terrace House",
+    "office": "Office Building",
+    "school": "School",
+    "university": "University Building",
+    "hospital": "Hospital",
+    "church": "Church",
+    "mosque": "Mosque",
+    "temple": "Temple",
+    "warehouse": "Warehouse",
+    "garage": "Garage",
+    "shed": "Shed",
+    "roof": "Roof Structure",
+    "hut": "Hut",
+    "cabin": "Cabin",
+    "hotel": "Hotel",
+    "dormitory": "Dormitory",
+    "cathedral": "Cathedral",
+}
+
+# Friendly labels for highway types
+_HIGHWAY_TYPE_LABELS = {
+    "motorway": "Motorway",
+    "trunk": "Trunk Road",
+    "primary": "Primary Road",
+    "secondary": "Secondary Road",
+    "tertiary": "Tertiary Road",
+    "residential": "Residential Street",
+    "service": "Service Road",
+    "footway": "Footpath",
+    "cycleway": "Cycle Path",
+    "path": "Path",
+    "unclassified": "Road",
+    "living_street": "Living Street",
+    "pedestrian": "Pedestrian Way",
+    "track": "Track",
+    "motorway_link": "Motorway Ramp",
+    "trunk_link": "Trunk Road Ramp",
+    "primary_link": "Primary Road Ramp",
+    "secondary_link": "Secondary Road Ramp",
+}
+
+
+def _generate_building_name(osm_id: int, tags: dict, levels: int, height: float) -> str:
+    """Generate a human-friendly name for a building when OSM name tag is absent."""
+    # 1. Use the actual OSM name if present
+    name = tags.get("name")
+    if name:
+        return name
+
+    # 2. Build from address components
+    addr_parts = []
+    house_number = tags.get("addr:housenumber")
+    street = tags.get("addr:street")
+    if house_number:
+        addr_parts.append(house_number)
+    if street:
+        addr_parts.append(street)
+    address_str = " ".join(addr_parts) if addr_parts else None
+
+    # 3. Building type label
+    btype = tags.get("building", "yes")
+    type_label = _BUILDING_TYPE_LABELS.get(btype, btype.replace("_", " ").title())
+
+    # 4. Compose: "Apartment Block, 42 Main St" or "Residential Building (3F)"
+    if address_str:
+        return f"{type_label}, {address_str}"
+    return f"{type_label} ({levels}F)"
+
+
+def _generate_road_name(osm_id: int, tags: dict, highway_type: str) -> str:
+    """Generate a human-friendly name for a road when OSM name tag is absent."""
+    # 1. Use the actual OSM name if present
+    name = tags.get("name")
+    if name:
+        return name
+
+    # 2. Use ref number (e.g., "NH44", "M25")
+    ref = tags.get("ref")
+    type_label = _HIGHWAY_TYPE_LABELS.get(highway_type, highway_type.replace("_", " ").title())
+    if ref:
+        return f"{type_label} {ref}"
+
+    # 3. Surface info
+    surface = tags.get("surface")
+    if surface:
+        return f"{type_label} ({surface})"
+
+    return type_label
+
+
 def _normalize_properties(osm_id: int, category: str, tags: dict) -> dict:
     """Build normalized properties dict with defaults."""
     props = {
@@ -193,6 +293,9 @@ def _normalize_properties(osm_id: int, category: str, tags: dict) -> dict:
 
         props["building_levels"] = levels
         props["height"] = height
+        props["building_type"] = tags.get("building", "yes")
+        props["address"] = _build_address(tags)
+        props["display_name"] = _generate_building_name(osm_id, tags, levels, height)
 
     elif category == "highway":
         highway_type = tags.get("highway", "unclassified")
@@ -200,14 +303,26 @@ def _normalize_properties(osm_id: int, category: str, tags: dict) -> dict:
         props["lanes"] = _safe_int(tags.get("lanes"))
         props["surface"] = tags.get("surface")
         props["road_width"] = HIGHWAY_WIDTHS.get(highway_type, 5.0)
+        props["display_name"] = _generate_road_name(osm_id, tags, highway_type)
 
     elif category == "landuse":
         props["landuse"] = tags.get("landuse")
 
     elif category == "amenity":
         props["amenity"] = tags.get("amenity")
+        props["display_name"] = tags.get("name") or tags.get("amenity", "").replace("_", " ").title()
 
     return props
+
+
+def _build_address(tags: dict) -> str | None:
+    """Build a one-line address string from addr:* tags."""
+    parts = []
+    for key in ("addr:housenumber", "addr:street", "addr:suburb", "addr:city"):
+        val = tags.get(key)
+        if val:
+            parts.append(val)
+    return ", ".join(parts) if parts else None
 
 
 def _safe_int(value) -> Optional[int]:

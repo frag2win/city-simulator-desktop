@@ -75,56 +75,15 @@ export default function AppShell() {
             <TitleBar sidecarStatus={sidecarStatus} />
 
             <div className="app-shell__content">
-                {cityData ? (
-                    <div className="viewport viewport--3d">
-                        {/* 3D Scene fills the viewport */}
-                        <Suspense fallback={<div className="viewport__loading">Loading 3D engine…</div>}>
-                            <CityScene />
-                        </Suspense>
+                <div className="viewport viewport--3d">
+                    {/* 3D Scene always mounted so Three.js is ready before data arrives */}
+                    <Suspense fallback={<div className="viewport__loading">Loading 3D engine…</div>}>
+                        <CityScene />
+                    </Suspense>
 
-                        {/* HUD overlay on top of 3D scene */}
-                        <div className="hud">
-                            <div className="hud__stats">
-                                <div className="hud__stat">{metadata.buildings || 0} buildings</div>
-                                <div className="hud__stat">{metadata.roads || 0} roads</div>
-                                <div className="hud__stat">{metadata.amenities || 0} amenities</div>
-                                <div className="hud__stat hud__stat--total">{featureCount} total</div>
-                            </div>
-                            <div className="hud__actions">
-                                <LayerToggles />
-                                <div className="hud__divider" />
-                                <ScreenshotExport />
-                                <button className="hud__btn" onClick={() => exportCity('geojson')} title="Export as GeoJSON (Ctrl+E)">
-                                    <ExportIcon />
-                                </button>
-                                <button className="hud__btn" onClick={() => exportCity('city')} title="Save as .city file (Ctrl+Shift+E)">
-                                    <SaveIcon />
-                                </button>
-                                <div className="hud__divider" />
-                                <button className="hud__btn" onClick={() => setShowSearch(true)} title="Load another city (Ctrl+L)">
-                                    <SearchIcon />
-                                </button>
-                                <button className="hud__btn" onClick={() => openCityFile()} title="Open file">
-                                    <FolderOpenIcon />
-                                </button>
-                                <button className="hud__btn" onClick={() => setShowCacheManager(true)} title="Cache manager">
-                                    <DatabaseIcon />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Simulation controls — bottom-left */}
-                        <SimulationControls />
-
-                        {/* Camera presets — bottom-right */}
-                        <CameraPresets />
-
-                        {/* Entity info panel (right side) */}
-                        <EntityInfoPanel />
-                    </div>
-                ) : (
-                    <div className="viewport">
-                        <div className="viewport__empty">
+                    {/* Empty-state overlay (shown until first city is loaded) */}
+                    {!cityData && (
+                        <div className="viewport__empty-overlay">
                             <div className="viewport__icon"><CityIcon /></div>
                             <h1 className="viewport__heading">City Simulator</h1>
                             <p className="viewport__subtext">
@@ -148,8 +107,52 @@ export default function AppShell() {
                                 <span>to search</span>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )}
+
+                    {/* HUD overlay on top of 3D scene (visible when city is loaded) */}
+                    {cityData && (
+                        <>
+                            <div className="hud">
+                                <div className="hud__stats">
+                                    <div className="hud__stat">{metadata.buildings || 0} buildings</div>
+                                    <div className="hud__stat">{metadata.roads || 0} roads</div>
+                                    <div className="hud__stat">{metadata.amenities || 0} amenities</div>
+                                    <div className="hud__stat hud__stat--total">{featureCount} total</div>
+                                </div>
+                                <div className="hud__actions">
+                                    <LayerToggles />
+                                    <div className="hud__divider" />
+                                    <ScreenshotExport />
+                                    <button className="hud__btn" onClick={() => exportCity('geojson')} title="Export as GeoJSON (Ctrl+E)">
+                                        <ExportIcon />
+                                    </button>
+                                    <button className="hud__btn" onClick={() => exportCity('city')} title="Save as .city file (Ctrl+Shift+E)">
+                                        <SaveIcon />
+                                    </button>
+                                    <div className="hud__divider" />
+                                    <button className="hud__btn" onClick={() => setShowSearch(true)} title="Load another city (Ctrl+L)">
+                                        <SearchIcon />
+                                    </button>
+                                    <button className="hud__btn" onClick={() => openCityFile()} title="Open file">
+                                        <FolderOpenIcon />
+                                    </button>
+                                    <button className="hud__btn" onClick={() => setShowCacheManager(true)} title="Cache manager">
+                                        <DatabaseIcon />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Simulation controls — bottom-left */}
+                            <SimulationControls />
+
+                            {/* Camera presets — bottom-right */}
+                            <CameraPresets />
+
+                            {/* Entity info panel (right side) */}
+                            <EntityInfoPanel />
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Overlays */}

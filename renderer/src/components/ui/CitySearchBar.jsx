@@ -91,6 +91,10 @@ export default function CitySearchBar() {
         const avgLat = (north + south) / 2;
         const areaKm2 = (latDiff * 111) * (lonDiff * 111 * Math.cos(avgLat * Math.PI / 180));
 
+        // Minimum half-degree to guarantee area ≥ 0.01 km² (sidecar minimum)
+        // 0.005° ≈ 0.55 km per axis → ~0.3 km² — comfortably above 0.01 km²
+        const MIN_HALF_DEG = 0.005;
+
         let bboxStr;
         if (areaKm2 > 20) {
             // Area too large — auto-crop to ~2km × 2km centered on result point
@@ -100,6 +104,15 @@ export default function CitySearchBar() {
             const cropE = (lon + halfDeg).toFixed(6);
             const cropW = (lon - halfDeg).toFixed(6);
             bboxStr = `${cropN},${cropS},${cropE},${cropW}`;
+        } else if (areaKm2 < 0.01) {
+            // Area too small (specific POI, building, etc.) — expand around centre point
+            const halfLat = Math.max(latDiff / 2, MIN_HALF_DEG);
+            const halfLon = Math.max(lonDiff / 2, MIN_HALF_DEG);
+            const expN = (lat + halfLat).toFixed(6);
+            const expS = (lat - halfLat).toFixed(6);
+            const expE = (lon + halfLon).toFixed(6);
+            const expW = (lon - halfLon).toFixed(6);
+            bboxStr = `${expN},${expS},${expE},${expW}`;
         } else {
             bboxStr = `${north},${south},${east},${west}`;
         }

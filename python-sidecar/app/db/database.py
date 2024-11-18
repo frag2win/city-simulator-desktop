@@ -157,7 +157,7 @@ async def delete_cached_city(cache_id: int) -> bool:
     if deleted:
         logger.info(f"Deleted cache entry {cache_id}")
     else:
-        logger.warn(f"Cache entry {cache_id} not found")
+        logger.warning(f"Cache entry {cache_id} not found")
 
     return deleted
 

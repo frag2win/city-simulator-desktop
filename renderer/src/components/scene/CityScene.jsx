@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createBuildingGroup } from '../../three/buildingGeometry';
@@ -37,6 +37,11 @@ export default function CityScene() {
     const mouseRef = useRef(new THREE.Vector2());
     const highlightRef = useRef(null);
     const originalColorRef = useRef(null);
+
+    // State flag to signal that the Three.js scene is ready.
+    // Used as a dependency in the cityData effect so it re-fires
+    // if data arrived before the scene was initialized.
+    const [sceneReady, setSceneReady] = useState(false);
 
     const storeRef = useRef(useCityStore.getState());
 
@@ -92,6 +97,33 @@ export default function CityScene() {
         controls.minDistance = 10;
         controls.maxDistance = 20000;
         controls.target.set(0, 0, 0);
+
+        // ─── Enhanced mouse & keyboard navigation ───
+        controls.enablePan = true;          // right-click / middle-click drag to pan
+        controls.screenSpacePanning = true; // pan parallel to screen (not ground plane)
+        controls.panSpeed = 1.2;            // faster pan for large cities
+        controls.enableZoom = true;         // scroll wheel zoom
+        controls.zoomSpeed = 1.5;           // slightly faster zoom
+        controls.enableRotate = true;       // left-click drag to orbit
+        controls.rotateSpeed = 0.8;
+        controls.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,       // left-drag → orbit
+            MIDDLE: THREE.MOUSE.PAN,        // middle-drag → pan
+            RIGHT: THREE.MOUSE.PAN,         // right-drag → pan
+        };
+        controls.touches = {
+            ONE: THREE.TOUCH.ROTATE,        // one-finger → orbit
+            TWO: THREE.TOUCH.DOLLY_PAN,     // two-finger → zoom + pan
+        };
+        controls.keys = {
+            LEFT: 'ArrowLeft',
+            UP: 'ArrowUp',
+            RIGHT: 'ArrowRight',
+            BOTTOM: 'ArrowDown',
+        };
+        controls.keyPanSpeed = 15;          // arrow key pan speed
+        controls.listenToKeyEvents(window); // enable keyboard panning
+
         controls.update();
         controlsRef.current = controls;
 
@@ -189,6 +221,9 @@ export default function CityScene() {
         lastTimeRef.current = performance.now();
         animate();
 
+        // Signal that the Three.js scene is ready for city data
+        setSceneReady(true);
+
         return () => {
             container.removeEventListener('click', handleClick);
             window.removeEventListener('resize', handleResize);
@@ -241,7 +276,7 @@ export default function CityScene() {
 
     // Load city data + spawn agents
     useEffect(() => {
-        if (!sceneRef.current || !cityData?.features) return;
+        if (!sceneReady || !sceneRef.current || !cityData?.features) return;
 
         const scene = sceneRef.current;
 
@@ -279,14 +314,19 @@ export default function CityScene() {
         // Auto-fit camera — try full city group first, fallback to roads-only
         let box = new THREE.Box3().setFromObject(cityGroup);
 
+        const isBoxValid = (b) =>
+            !b.isEmpty() &&
+            isFinite(b.min.x) && isFinite(b.min.y) && isFinite(b.min.z) &&
+            isFinite(b.max.x) && isFinite(b.max.y) && isFinite(b.max.z);
+
         // If the full bbox is invalid (NaN from bad geometry), try roads only
-        if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.x)) {
+        if (!isBoxValid(box)) {
             console.warn('[CityScene] Full bounding box invalid, falling back to roads-only bbox');
             box = new THREE.Box3().setFromObject(roads);
         }
 
         // Last resort: compute bbox manually from feature coordinates
-        if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.x)) {
+        if (!isBoxValid(box)) {
             console.warn('[CityScene] Roads bbox also invalid, computing from raw feature coords');
             let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
             for (const f of features) {
@@ -310,7 +350,7 @@ export default function CityScene() {
             }
         }
 
-        if (!box.isEmpty() && isFinite(box.min.x) && isFinite(box.max.x)) {
+        if (isBoxValid(box)) {
             const size = box.getSize(new THREE.Vector3());
             const center = box.getCenter(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.z, 200);
@@ -367,7 +407,7 @@ export default function CityScene() {
         lod.register(buildings);
         lodRef.current = lod;
 
-    }, [cityData, setAgentCounts]);
+    }, [cityData, sceneReady, setAgentCounts]);
 
     // Layer visibility
     useEffect(() => {

@@ -1,1 +1,0 @@
-import sqlite3; import json; conn = sqlite3.connect('city_cache.db'); cur = conn.cursor(); cur.execute('SELECT geojson FROM cities LIMIT 1'); data = json.loads(cur.fetchone()[0]); print(json.dumps(data['features'][0], indent=2))

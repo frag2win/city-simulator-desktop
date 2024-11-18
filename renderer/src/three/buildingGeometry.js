@@ -182,6 +182,9 @@ export function createBuildingGroup(features) {
             type: 'building',
             osm_id: feature.properties?.osm_id,
             name: feature.properties?.name,
+            display_name: feature.properties?.display_name || feature.properties?.name,
+            building_type: feature.properties?.building_type,
+            address: feature.properties?.address,
             height,
             levels,
         };

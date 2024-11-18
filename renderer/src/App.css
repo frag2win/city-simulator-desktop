@@ -250,6 +250,20 @@ body {
   animation: fadeIn 0.8s ease;
 }
 
+.viewport__empty-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  background: rgba(8, 8, 16, 0.85);
+  animation: fadeIn 0.8s ease;
+  pointer-events: auto;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

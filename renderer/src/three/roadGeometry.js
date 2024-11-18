@@ -1,9 +1,8 @@
 /**
  * roadGeometry.js — Renders GeoJSON LineString roads as flat ribbons.
- * Uses merged BufferGeometry per road-type for minimal draw calls.
+ * Each road is a separate mesh so per-road metadata (name, OSM ID) is preserved.
  */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Road colors by type
 const ROAD_COLORS = {
@@ -60,35 +59,18 @@ export function createRoadGroup(features) {
             type: 'road',
             osm_id: road.properties?.osm_id,
             name: road.properties?.name,
+            display_name: road.properties?.display_name || road.properties?.name,
             highway_type: type,
+            surface: road.properties?.surface,
+            lanes: road.properties?.lanes,
         }});
     }
 
-    // Merge each bucket into a single mesh
+    // Render each road as its own mesh so we keep per-road metadata
+    // (name, OSM ID, display_name) for the entity info panel.
     for (const [type, items] of Object.entries(buckets)) {
         const color = ROAD_COLORS[type] || ROAD_COLORS.default;
 
-        if (items.length > 1) {
-            // Try to merge geometries for fewer draw calls
-            try {
-                const merged = mergeGeometries(items.map(i => i.geom), false);
-                if (merged) {
-                    const mat = createRoadMaterial(color);
-                    const mesh = new THREE.Mesh(merged, mat);
-                    mesh.receiveShadow = true;
-                    mesh.userData = { type: 'road', highway_type: type, merged: true };
-                    group.add(mesh);
-
-                    // Dispose individual geometries after merge
-                    items.forEach(i => i.geom.dispose());
-                    continue;
-                }
-            } catch {
-                // Merge failed — fall through to individual meshes
-            }
-        }
-
-        // Fallback: individual meshes
         for (const item of items) {
             const mat = createRoadMaterial(color);
             const mesh = new THREE.Mesh(item.geom, mat);

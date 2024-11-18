@@ -14,13 +14,23 @@
     "lint": "eslint .",
     "postinstall": "cd renderer && npm install"
   },
-  "keywords": ["city", "simulator", "3d", "openstreetmap", "electron", "threejs"],
+  "keywords": [
+    "city",
+    "simulator",
+    "3d",
+    "openstreetmap",
+    "electron",
+    "threejs"
+  ],
   "author": "Shubham",
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "concurrently": "^9.1.0",
     "electron": "^33.3.1",
     "electron-builder": "^25.1.8",
+    "eslint": "^10.0.2",
+    "globals": "^17.3.0",
     "wait-on": "^8.0.3"
   },
   "dependencies": {

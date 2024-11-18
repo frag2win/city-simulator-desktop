@@ -107,7 +107,7 @@ async def query_overpass(
             elif response.status_code == 429:
                 # Rate limited — wait and retry
                 retry_after = int(response.headers.get("Retry-After", RETRY_DELAY * attempt))
-                logger.warn(f"Overpass rate limited, retrying in {retry_after}s")
+                logger.warning(f"Overpass rate limited, retrying in {retry_after}s")
                 if on_progress:
                     await on_progress(
                         "querying",
@@ -123,19 +123,19 @@ async def query_overpass(
                 raise OverpassError(f"Invalid query: {error_text}")
 
             else:
-                logger.warn(f"Overpass HTTP {response.status_code}, retrying…")
+                logger.warning(f"Overpass HTTP {response.status_code}, retrying…")
                 await asyncio.sleep(RETRY_DELAY * attempt)
                 continue
 
         except httpx.TimeoutException:
-            logger.warn(f"Overpass timeout on attempt {attempt}")
+            logger.warning(f"Overpass timeout on attempt {attempt}")
             if attempt < MAX_RETRIES:
                 await asyncio.sleep(RETRY_DELAY * attempt)
                 continue
             raise OverpassError("Overpass API timed out after all retries")
 
         except httpx.ConnectError:
-            logger.warn(f"Overpass connection failed on attempt {attempt}")
+            logger.warning(f"Overpass connection failed on attempt {attempt}")
             if attempt < MAX_RETRIES:
                 await asyncio.sleep(RETRY_DELAY * attempt)
                 continue
