@@ -1,6 +1,8 @@
 /**
- * pedestrianAgents.js — Pedestrians walking between amenity points.
- * Uses InstancedMesh (small spheres) for GPU performance.
+ * pedestrianAgents.js — Pedestrians walking between amenity/building waypoints.
+ * Uses InstancedMesh (small capsules) for GPU performance.
+ * Pedestrians walk towards nearest waypoints using weighted random selection,
+ * preferring closer destinations for realistic cluster behavior.
  */
 import * as THREE from 'three';
 
@@ -20,16 +22,16 @@ const WALK_SPEED = 1.4; // m/s average walking speed
 export class PedestrianAgents {
     constructor(scene) {
         this.scene = scene;
-        this.waypoints = [];     // amenity [x, z] positions
-        this.peds = [];          // { pos, target, speed }
+        this.waypoints = [];     // amenity/building [Vector3] positions
+        this.peds = [];
         this.instancedMesh = null;
         this.dummy = new THREE.Object3D();
         this.active = false;
+        this._spatialGrid = null; // for fast nearby-waypoint lookup
     }
 
     /** Initialize from features (amenity points + building centroids) */
     init(features) {
-        // Collect walkable waypoints from amenities and building centroids
         this.waypoints = [];
 
         for (const f of features) {
@@ -49,8 +51,11 @@ export class PedestrianAgents {
 
         if (this.waypoints.length < 2) return;
 
-        // Create instanced mesh
-        const geom = new THREE.SphereGeometry(0.5, 4, 3);
+        // Build spatial grid for fast nearest-waypoint queries
+        this._buildSpatialGrid();
+
+        // Create instanced mesh — capsule-like shape
+        const geom = new THREE.CapsuleGeometry(0.3, 0.8, 2, 4);
         const mat = new THREE.MeshPhongMaterial({
             color: 0xffffff,
             flatShading: true,
@@ -60,26 +65,25 @@ export class PedestrianAgents {
         this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.instancedMesh.name = 'pedestrians';
 
-        // Spawn pedestrians near random waypoints
+        // Spawn pedestrians
         const count = Math.min(MAX_PEDESTRIANS, Math.floor(this.waypoints.length * 0.08));
         for (let i = 0; i < count; i++) {
             const startIdx = Math.floor(Math.random() * this.waypoints.length);
-            let endIdx = Math.floor(Math.random() * this.waypoints.length);
-            if (endIdx === startIdx) endIdx = (endIdx + 1) % this.waypoints.length;
+            const targetIdx = this._pickNearbyTarget(startIdx);
 
             const pos = this.waypoints[startIdx].clone();
-            // Offset slightly from exact waypoint
             pos.x += (Math.random() - 0.5) * 5;
             pos.z += (Math.random() - 0.5) * 5;
 
-            this.peds.push({
+            const ped = {
                 pos,
-                target: this.waypoints[endIdx].clone(),
+                target: this.waypoints[targetIdx].clone(),
                 speed: WALK_SPEED * (0.7 + Math.random() * 0.6),
                 colorIdx: Math.floor(Math.random() * PED_COLORS.length),
-            });
-
-            this.instancedMesh.setColorAt(i, PED_COLORS[this.peds[i].colorIdx]);
+                waitTimer: 0, // pause at destination (seconds)
+            };
+            this.peds.push(ped);
+            this.instancedMesh.setColorAt(i, PED_COLORS[ped.colorIdx]);
         }
 
         // Hide unused
@@ -94,18 +98,85 @@ export class PedestrianAgents {
         this.active = true;
     }
 
+    /** Build a spatial hash grid for quick nearby-waypoint lookups */
+    _buildSpatialGrid() {
+        const cellSize = 100; // meters
+        this._gridCellSize = cellSize;
+        this._grid = new Map();
+
+        for (let i = 0; i < this.waypoints.length; i++) {
+            const wp = this.waypoints[i];
+            const cx = Math.floor(wp.x / cellSize);
+            const cz = Math.floor(wp.z / cellSize);
+            const key = `${cx},${cz}`;
+            if (!this._grid.has(key)) this._grid.set(key, []);
+            this._grid.get(key).push(i);
+        }
+    }
+
+    /** Pick a nearby waypoint weighted by inverse distance (closer = more likely) */
+    _pickNearbyTarget(fromIdx) {
+        const wp = this.waypoints[fromIdx];
+        const cellSize = this._gridCellSize;
+        const cx = Math.floor(wp.x / cellSize);
+        const cz = Math.floor(wp.z / cellSize);
+
+        // Search surrounding cells
+        const candidates = [];
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dz = -2; dz <= 2; dz++) {
+                const key = `${cx + dx},${cz + dz}`;
+                const cell = this._grid?.get(key);
+                if (cell) candidates.push(...cell);
+            }
+        }
+
+        // Filter out self and compute weights
+        const filtered = candidates.filter(i => i !== fromIdx);
+        if (filtered.length === 0) {
+            // Fallback: any random waypoint
+            return (fromIdx + 1 + Math.floor(Math.random() * (this.waypoints.length - 1))) % this.waypoints.length;
+        }
+
+        // Weighted random by inverse distance
+        const weights = filtered.map(i => {
+            const d = wp.distanceTo(this.waypoints[i]);
+            return 1 / (d + 5); // +5 to avoid division issues
+        });
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+        let r = Math.random() * totalWeight;
+        for (let i = 0; i < filtered.length; i++) {
+            r -= weights[i];
+            if (r <= 0) return filtered[i];
+        }
+        return filtered[filtered.length - 1];
+    }
+
     update(dt, speed = 1) {
         if (!this.active || !this.instancedMesh) return;
 
         for (let i = 0; i < this.peds.length; i++) {
             const p = this.peds[i];
+
+            // Handle waiting at destination
+            if (p.waitTimer > 0) {
+                p.waitTimer -= dt * speed;
+                this.dummy.position.copy(p.pos);
+                this.dummy.scale.set(1, 1, 1);
+                this.dummy.updateMatrix();
+                this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
+                continue;
+            }
+
             const dir = new THREE.Vector3().subVectors(p.target, p.pos);
             const dist = dir.length();
 
             if (dist < 2) {
-                // Reached target — pick new random destination
-                const idx = Math.floor(Math.random() * this.waypoints.length);
-                p.target = this.waypoints[idx].clone();
+                // Arrived — pause briefly, then pick new nearby destination
+                p.waitTimer = 1 + Math.random() * 4; // 1-5 seconds wait
+                const nearestIdx = this._findNearestWaypoint(p.pos);
+                const newTarget = this._pickNearbyTarget(nearestIdx);
+                p.target = this.waypoints[newTarget].clone();
             } else {
                 // Walk toward target
                 dir.normalize();
@@ -120,6 +191,17 @@ export class PedestrianAgents {
         }
 
         this.instancedMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    /** Find nearest waypoint index to a position */
+    _findNearestWaypoint(pos) {
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < this.waypoints.length; i++) {
+            const d = pos.distanceToSquared(this.waypoints[i]);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+        }
+        return bestIdx;
     }
 
     getCount() {

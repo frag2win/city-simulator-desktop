@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import TitleBar from './TitleBar';
-import CityScene from '../scene/CityScene';
+const CityScene = lazy(() => import('../scene/CityScene'));
 import CitySearchBar from '../ui/CitySearchBar';
 import ProgressModal from '../ui/ProgressModal';
 import CacheManager from '../ui/CacheManager';
@@ -78,7 +78,9 @@ export default function AppShell() {
                 {cityData ? (
                     <div className="viewport viewport--3d">
                         {/* 3D Scene fills the viewport */}
-                        <CityScene />
+                        <Suspense fallback={<div className="viewport__loading">Loading 3D engine…</div>}>
+                            <CityScene />
+                        </Suspense>
 
                         {/* HUD overlay on top of 3D scene */}
                         <div className="hud">

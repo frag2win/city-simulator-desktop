@@ -1,8 +1,9 @@
 /**
  * roadGeometry.js — Renders GeoJSON LineString roads as flat ribbons.
- * Uses simple BufferGeometry strips for reliability.
+ * Uses merged BufferGeometry per road-type for minimal draw calls.
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Road colors by type
 const ROAD_COLORS = {
@@ -36,6 +37,7 @@ const ROAD_WIDTHS = {
 
 /**
  * Create a Three.js group containing all road geometries.
+ * Batches roads by type into merged meshes for fewer draw calls.
  */
 export function createRoadGroup(features) {
     const group = new THREE.Group();
@@ -45,36 +47,92 @@ export function createRoadGroup(features) {
         (f) => f.properties?.osm_type === 'highway' && f.geometry?.type === 'LineString'
     );
 
+    // Bucket geometries by road type for merge
+    const buckets = {}; // type → { geometries: [], userData: [] }
+
     for (const road of roads) {
-        const mesh = createRoadStrip(road);
-        if (mesh) {
+        const type = road.properties?.highway_type || 'default';
+        const geom = createRoadStripGeometry(road);
+        if (!geom) continue;
+
+        if (!buckets[type]) buckets[type] = [];
+        buckets[type].push({ geom, userData: {
+            type: 'road',
+            osm_id: road.properties?.osm_id,
+            name: road.properties?.name,
+            highway_type: type,
+        }});
+    }
+
+    // Merge each bucket into a single mesh
+    for (const [type, items] of Object.entries(buckets)) {
+        const color = ROAD_COLORS[type] || ROAD_COLORS.default;
+
+        if (items.length > 1) {
+            // Try to merge geometries for fewer draw calls
+            try {
+                const merged = mergeGeometries(items.map(i => i.geom), false);
+                if (merged) {
+                    const mat = createRoadMaterial(color);
+                    const mesh = new THREE.Mesh(merged, mat);
+                    mesh.receiveShadow = true;
+                    mesh.userData = { type: 'road', highway_type: type, merged: true };
+                    group.add(mesh);
+
+                    // Dispose individual geometries after merge
+                    items.forEach(i => i.geom.dispose());
+                    continue;
+                }
+            } catch {
+                // Merge failed — fall through to individual meshes
+            }
+        }
+
+        // Fallback: individual meshes
+        for (const item of items) {
+            const mat = createRoadMaterial(color);
+            const mesh = new THREE.Mesh(item.geom, mat);
+            mesh.receiveShadow = true;
+            mesh.userData = item.userData;
             group.add(mesh);
         }
     }
+
     return group;
 }
 
+function createRoadMaterial(color) {
+    return new THREE.MeshStandardMaterial({
+        color,
+        emissive: new THREE.Color(0x1a1a2e),
+        emissiveIntensity: 0.35,
+        roughness: 0.9,
+        metalness: 0.0,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+    });
+}
+
 /**
- * Create a flat ribbon mesh for a single road using a simple strip.
- * This avoids CatmullRomCurve3 which can fail on short or collinear segments.
+ * Create a BufferGeometry ribbon strip for a single road.
+ * Returns null on failure.
  */
-function createRoadStrip(feature) {
+function createRoadStripGeometry(feature) {
     const coords = feature.geometry.coordinates;
     if (!coords || coords.length < 2) return null;
 
     const type = feature.properties?.highway_type || 'default';
-    const color = ROAD_COLORS[type] || ROAD_COLORS.default;
     const halfWidth = (ROAD_WIDTHS[type] || ROAD_WIDTHS.default) / 2;
 
     try {
-        // Build a triangle strip for the road ribbon
         const vertices = [];
         const indices = [];
 
         for (let i = 0; i < coords.length; i++) {
-            const [x, y] = coords[i]; // projected [x_meters, y_meters, 0]
+            const [x, y] = coords[i];
 
-            // Compute perpendicular direction for width
             let dx, dy;
             if (i < coords.length - 1) {
                 dx = coords[i + 1][0] - x;
@@ -87,15 +145,12 @@ function createRoadStrip(feature) {
             const len = Math.sqrt(dx * dx + dy * dy);
             if (len === 0) continue;
 
-            // Perpendicular (rotate 90°)
             const nx = -dy / len * halfWidth;
             const ny = dx / len * halfWidth;
 
-            // Left and right edge points
-            // Map: X = x, Y = 0.2 (road surface), Z = -y
             const idx = vertices.length / 3;
-            vertices.push(x + nx, 0.5, -(y + ny));  // left
-            vertices.push(x - nx, 0.5, -(y - ny));  // right
+            vertices.push(x + nx, 0.5, -(y + ny));
+            vertices.push(x - nx, 0.5, -(y - ny));
 
             if (idx >= 2) {
                 indices.push(idx - 2, idx - 1, idx);
@@ -103,36 +158,13 @@ function createRoadStrip(feature) {
             }
         }
 
-        if (vertices.length < 12) return null; // Need at least 2 segments
+        if (vertices.length < 12) return null;
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
-
-        const material = new THREE.MeshStandardMaterial({
-            color,
-            emissive: new THREE.Color(0x1a1a2e),
-            emissiveIntensity: 0.35,
-            roughness: 0.9,
-            metalness: 0.0,
-            side: THREE.DoubleSide,
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1,
-        });
-
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.receiveShadow = true;
-
-        mesh.userData = {
-            type: 'road',
-            osm_id: feature.properties?.osm_id,
-            name: feature.properties?.name,
-            highway_type: type,
-        };
-
-        return mesh;
+        return geometry;
     } catch {
         return null;
     }

@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const path = require('path');
+const { BrowserWindow } = require('electron');
 const { findFreePort } = require('./portManager');
 const { logger } = require('../utils/logger');
 
@@ -8,16 +9,36 @@ let sidecarProcess = null;
 let sidecarPort = null;
 let sidecarToken = null;
 let restartCount = 0;
-const MAX_RESTARTS = 3;
+const MAX_RESTARTS = 5;
 const HEALTH_CHECK_INTERVAL = 5000; // 5 seconds
-const STARTUP_TIMEOUT = 10000;      // 10 seconds
+const STARTUP_TIMEOUT = 15000;      // 15 seconds (up from 10s for slow machines)
 let healthCheckTimer = null;
+let consecutiveHealthFailures = 0;
+const MAX_HEALTH_FAILURES = 3;
 
 /**
  * Generate a one-time auth token for the sidecar session.
  */
 function generateToken() {
     return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Broadcast sidecar status to all renderer windows.
+ * @param {'ready'|'crashed'|'restarting'|'offline'} status
+ * @param {string} [message]
+ */
+function broadcastSidecarStatus(status, message) {
+    try {
+        const windows = BrowserWindow.getAllWindows();
+        for (const win of windows) {
+            if (!win.isDestroyed()) {
+                win.webContents.send('sidecar:status', { status, message });
+            }
+        }
+    } catch {
+        // Window may not exist yet during startup
+    }
 }
 
 /**
@@ -94,18 +115,21 @@ async function spawnSidecar() {
             sidecarProcess = null;
             stopHealthCheck();
 
-            // Auto-restart with backoff
+            // Auto-restart with exponential backoff
             if (restartCount < MAX_RESTARTS) {
                 restartCount++;
-                const delay = restartCount * 1000; // 1s, 2s, 3s
+                const delay = Math.min(restartCount * 1000, 5000); // 1s, 2s, 3s, 4s, 5s
                 logger.info(`Restarting sidecar in ${delay}ms (attempt ${restartCount}/${MAX_RESTARTS})`);
+                broadcastSidecarStatus('restarting', `Engine crashed — restarting (attempt ${restartCount}/${MAX_RESTARTS})…`);
                 setTimeout(() => {
                     spawnSidecar().catch((err) => {
                         logger.error('Sidecar restart failed', { error: err.message });
+                        broadcastSidecarStatus('offline', 'Engine could not restart. Please restart the application.');
                     });
                 }, delay);
             } else {
                 logger.error('Sidecar max restarts reached — giving up');
+                broadcastSidecarStatus('offline', `Engine crashed ${MAX_RESTARTS} times and will not restart. Please restart the application.`);
             }
         });
 
@@ -118,7 +142,9 @@ async function spawnSidecar() {
         waitForHealth(sidecarPort, sidecarToken, STARTUP_TIMEOUT)
             .then(() => {
                 restartCount = 0; // Reset on successful start
+                consecutiveHealthFailures = 0;
                 startHealthCheck();
+                broadcastSidecarStatus('ready', 'Engine is running');
                 resolve();
             })
             .catch(reject);
@@ -153,10 +179,11 @@ async function waitForHealth(port, token, timeoutMs) {
 }
 
 /**
- * Start periodic health checks.
+ * Start periodic health checks. Auto-restarts sidecar if consecutive failures exceed threshold.
  */
 function startHealthCheck() {
     stopHealthCheck();
+    consecutiveHealthFailures = 0;
     healthCheckTimer = setInterval(async () => {
         if (!sidecarPort || !sidecarToken) return;
         try {
@@ -164,11 +191,29 @@ function startHealthCheck() {
                 headers: { 'Authorization': `Bearer ${sidecarToken}` },
                 signal: AbortSignal.timeout(3000),
             });
-            if (!response.ok) {
-                logger.warn('Sidecar health check failed', { status: response.status });
+            if (response.ok) {
+                consecutiveHealthFailures = 0;
+            } else {
+                consecutiveHealthFailures++;
+                logger.warn('Sidecar health check failed', { status: response.status, failures: consecutiveHealthFailures });
             }
         } catch {
-            logger.warn('Sidecar health check unreachable');
+            consecutiveHealthFailures++;
+            logger.warn('Sidecar health check unreachable', { failures: consecutiveHealthFailures });
+        }
+
+        // If too many consecutive failures, kill and restart
+        if (consecutiveHealthFailures >= MAX_HEALTH_FAILURES && sidecarProcess) {
+            logger.error(`Sidecar unresponsive after ${MAX_HEALTH_FAILURES} health checks — forcing restart`);
+            broadcastSidecarStatus('restarting', 'Engine unresponsive — restarting…');
+            killSidecar();
+            // killSidecar sets restartCount = MAX_RESTARTS to prevent auto-restart,
+            // but here we want to restart, so reset it
+            restartCount = Math.max(0, restartCount - 1);
+            try { await spawnSidecar(); } catch (err) {
+                logger.error('Forced restart failed', { error: err.message });
+                broadcastSidecarStatus('offline', 'Engine could not restart.');
+            }
         }
     }, HEALTH_CHECK_INTERVAL);
 }

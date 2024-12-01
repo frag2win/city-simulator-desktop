@@ -1,12 +1,13 @@
 /**
- * vehicleAgents.js — Traffic vehicles moving along road paths.
+ * vehicleAgents.js — Traffic vehicles navigating via A* pathfinding on the road graph.
  * Uses InstancedMesh for GPU performance (~200 vehicles, 1 draw call).
+ * Vehicles plan multi-road routes, follow them segment by segment, then re-plan.
  */
 import * as THREE from 'three';
+import { RoadGraph } from './roadGraph';
 
 const MAX_VEHICLES = 200;
 
-// Vehicle colors (instanced mesh can't do per-instance materials, use vertex colors)
 const VEHICLE_COLORS = [
     new THREE.Color(0xf5d442), // Yellow taxi
     new THREE.Color(0xeeeeee), // White car
@@ -31,43 +32,18 @@ const ROAD_SPEEDS = {
 export class VehicleAgents {
     constructor(scene) {
         this.scene = scene;
-        this.roads = [];         // array of { coords: [[x,y,z]...], type, totalLength }
-        this.vehicles = [];      // array of { roadIdx, progress, speed, colorIdx }
+        this.graph = new RoadGraph();
+        this.vehicles = [];
         this.instancedMesh = null;
         this.dummy = new THREE.Object3D();
         this.active = false;
     }
 
-    /** Initialize from road features */
+    /** Initialize from road features — builds graph and spawns vehicles */
     init(features) {
-        // Collect road paths
-        this.roads = [];
-        const roadFeatures = features.filter(
-            (f) => f.properties?.osm_type === 'highway' && f.geometry?.type === 'LineString'
-        );
+        this.graph.build(features);
 
-        for (const road of roadFeatures) {
-            const coords = road.geometry.coordinates;
-            if (!coords || coords.length < 2) continue;
-
-            // Convert to 3D points (same mapping as roadGeometry.js)
-            const points = coords.map(([x, y]) => new THREE.Vector3(x, 1.5, -y));
-
-            // Compute total path length
-            let totalLength = 0;
-            for (let i = 1; i < points.length; i++) {
-                totalLength += points[i].distanceTo(points[i - 1]);
-            }
-            if (totalLength < 5) continue; // skip tiny roads
-
-            this.roads.push({
-                points,
-                type: road.properties?.highway_type || 'default',
-                totalLength,
-            });
-        }
-
-        if (this.roads.length === 0) return;
+        if (this.graph.nodeCount < 2 || this.graph.roads.length === 0) return;
 
         // Create instanced mesh
         const geom = new THREE.BoxGeometry(3, 1.5, 2);
@@ -80,34 +56,60 @@ export class VehicleAgents {
         this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.instancedMesh.name = 'vehicles';
 
-        // Spawn vehicles on random roads
-        const count = Math.min(MAX_VEHICLES, Math.floor(this.roads.length * 0.15));
+        // Spawn vehicles with A* routes
+        const count = Math.min(MAX_VEHICLES, Math.floor(this.graph.roads.length * 0.15));
         for (let i = 0; i < count; i++) {
-            const roadIdx = Math.floor(Math.random() * this.roads.length);
-            const road = this.roads[roadIdx];
-            const colorIdx = Math.floor(Math.random() * VEHICLE_COLORS.length);
-
-            this.vehicles.push({
-                roadIdx,
-                progress: Math.random(), // 0-1 along road
-                speed: ROAD_SPEEDS[road.type] || ROAD_SPEEDS.default,
-                colorIdx,
-                direction: Math.random() > 0.5 ? 1 : -1,
-            });
-
-            this.instancedMesh.setColorAt(i, VEHICLE_COLORS[colorIdx]);
+            const vehicle = this._createVehicle();
+            if (!vehicle) continue;
+            this.vehicles.push(vehicle);
+            this.instancedMesh.setColorAt(i, VEHICLE_COLORS[vehicle.colorIdx]);
         }
 
         // Hide unused instances
         this.dummy.scale.set(0, 0, 0);
         this.dummy.updateMatrix();
-        for (let i = count; i < MAX_VEHICLES; i++) {
+        for (let i = this.vehicles.length; i < MAX_VEHICLES; i++) {
             this.instancedMesh.setMatrixAt(i, this.dummy.matrix);
         }
 
-        this.instancedMesh.instanceColor.needsUpdate = true;
+        if (this.instancedMesh.instanceColor) {
+            this.instancedMesh.instanceColor.needsUpdate = true;
+        }
         this.scene.add(this.instancedMesh);
         this.active = true;
+    }
+
+    /** Create a vehicle with a planned A* route */
+    _createVehicle() {
+        const startNode = this.graph.getRandomNode();
+        let endNode = this.graph.getRandomNode();
+        // Pick a different destination
+        let tries = 0;
+        while (endNode === startNode && tries++ < 10) {
+            endNode = this.graph.getRandomNode();
+        }
+
+        const path = this.graph.findPath(startNode, endNode);
+        if (!path || path.length === 0) {
+            // Fallback: just ride a random road back and forth
+            const roadIdx = Math.floor(Math.random() * this.graph.roads.length);
+            return {
+                path: [{ roadIdx, reverse: false }],
+                pathStep: 0,
+                progress: 0,
+                speed: ROAD_SPEEDS[this.graph.roads[roadIdx]?.type] || ROAD_SPEEDS.default,
+                colorIdx: Math.floor(Math.random() * VEHICLE_COLORS.length),
+            };
+        }
+
+        const firstRoad = this.graph.roads[path[0].roadIdx];
+        return {
+            path,
+            pathStep: 0,
+            progress: Math.random() * 0.3, // start along first road
+            speed: ROAD_SPEEDS[firstRoad?.type] || ROAD_SPEEDS.default,
+            colorIdx: Math.floor(Math.random() * VEHICLE_COLORS.length),
+        };
     }
 
     /** Update each frame. dt in seconds, speed = sim multiplier */
@@ -116,22 +118,41 @@ export class VehicleAgents {
 
         for (let i = 0; i < this.vehicles.length; i++) {
             const v = this.vehicles[i];
-            const road = this.roads[v.roadIdx];
+            const step = v.path[v.pathStep];
+            if (!step) { this._replanVehicle(v); continue; }
 
-            // Advance along road
+            const road = this.graph.roads[step.roadIdx];
+            if (!road) { this._replanVehicle(v); continue; }
+
+            // Advance along current road segment
             const distStep = v.speed * dt * speed;
-            v.progress += (distStep / road.totalLength) * v.direction;
+            v.progress += distStep / road.totalLength;
 
-            // Respawn when reaching end
-            if (v.progress > 1 || v.progress < 0) {
-                v.roadIdx = Math.floor(Math.random() * this.roads.length);
-                v.progress = v.direction > 0 ? 0 : 1;
-                v.speed = ROAD_SPEEDS[this.roads[v.roadIdx].type] || ROAD_SPEEDS.default;
+            // Move to next road in path when current one is done
+            if (v.progress >= 1) {
+                v.pathStep++;
+                v.progress = 0;
+
+                if (v.pathStep >= v.path.length) {
+                    // Route completed — plan a new one
+                    this._replanVehicle(v);
+                } else {
+                    // Update speed for new road type
+                    const nextRoad = this.graph.roads[v.path[v.pathStep]?.roadIdx];
+                    v.speed = ROAD_SPEEDS[nextRoad?.type] || ROAD_SPEEDS.default;
+                }
             }
 
-            // Get position on road path
-            const pos = this._getPointOnPath(road.points, v.progress);
-            const lookAt = this._getPointOnPath(road.points, Math.min(1, v.progress + 0.02 * v.direction));
+            const currentStep = v.path[v.pathStep];
+            if (!currentStep) continue;
+
+            // Get position and look-ahead on road
+            const pos = this.graph.getPointOnRoad(currentStep.roadIdx, v.progress, currentStep.reverse);
+            const lookAt = this.graph.getPointOnRoad(
+                currentStep.roadIdx,
+                Math.min(1, v.progress + 0.02),
+                currentStep.reverse
+            );
 
             this.dummy.position.copy(pos);
             this.dummy.lookAt(lookAt);
@@ -143,15 +164,30 @@ export class VehicleAgents {
         this.instancedMesh.instanceMatrix.needsUpdate = true;
     }
 
-    /** Get interpolated point along path at progress [0,1] */
-    _getPointOnPath(points, progress) {
-        const p = Math.max(0, Math.min(1, progress));
-        const totalIdx = (points.length - 1) * p;
-        const idx = Math.floor(totalIdx);
-        const frac = totalIdx - idx;
+    /** Re-plan a vehicle's route with new A* path */
+    _replanVehicle(v) {
+        // Pick new random destination
+        const startNode = this.graph.getRandomNode();
+        let endNode = this.graph.getRandomNode();
+        let tries = 0;
+        while (endNode === startNode && tries++ < 10) {
+            endNode = this.graph.getRandomNode();
+        }
 
-        if (idx >= points.length - 1) return points[points.length - 1].clone();
-        return new THREE.Vector3().lerpVectors(points[idx], points[idx + 1], frac);
+        const path = this.graph.findPath(startNode, endNode);
+        if (path && path.length > 0) {
+            v.path = path;
+            v.pathStep = 0;
+            v.progress = 0;
+            v.speed = ROAD_SPEEDS[this.graph.roads[path[0].roadIdx]?.type] || ROAD_SPEEDS.default;
+        } else {
+            // Fallback to random road
+            const roadIdx = Math.floor(Math.random() * this.graph.roads.length);
+            v.path = [{ roadIdx, reverse: Math.random() > 0.5 }];
+            v.pathStep = 0;
+            v.progress = 0;
+            v.speed = ROAD_SPEEDS[this.graph.roads[roadIdx]?.type] || ROAD_SPEEDS.default;
+        }
     }
 
     getCount() {

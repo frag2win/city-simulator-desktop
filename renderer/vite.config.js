@@ -17,5 +17,22 @@ export default defineConfig({
     build: {
         outDir: 'dist',
         emptyOutDir: true,
+        chunkSizeWarningLimit: 600,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    // Split Three.js into its own chunk (~500KB) — cached separately
+                    three: ['three'],
+                    // React + Zustand in a vendor chunk
+                    vendor: ['react', 'react-dom', 'zustand'],
+                },
+            },
+        },
+    },
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        setupFiles: ['./src/__tests__/setup.js'],
+        include: ['src/**/*.{test,spec}.{js,jsx}'],
     },
 });
