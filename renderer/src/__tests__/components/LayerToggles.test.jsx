@@ -7,7 +7,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 
 // Mock zustand store
 const mockToggleLayer = vi.fn();
-let mockLayers = { buildings: true, roads: true, amenities: true, heatmap: false };
+let mockLayers = { buildings: true, roads: true, amenities: true, terrain: true, heatmap: false };
 
 vi.mock('../../store/cityStore', () => ({
     default: () => ({
@@ -21,6 +21,7 @@ vi.mock('../../components/ui/Icons', () => ({
     BuildingIcon: () => <span data-testid="icon-building" />,
     RoadIcon: () => <span data-testid="icon-road" />,
     PinIcon: () => <span data-testid="icon-pin" />,
+    TerrainIcon: () => <span data-testid="icon-terrain" />,
     HeatmapIcon: () => <span data-testid="icon-heatmap" />,
 }));
 
@@ -29,13 +30,13 @@ import LayerToggles from '../../components/ui/LayerToggles';
 describe('LayerToggles', () => {
     beforeEach(() => {
         mockToggleLayer.mockClear();
-        mockLayers = { buildings: true, roads: true, amenities: true, heatmap: false };
+        mockLayers = { buildings: true, roads: true, amenities: true, terrain: true, heatmap: false };
     });
 
-    it('renders four toggle buttons', () => {
+    it('renders five toggle buttons', () => {
         render(<LayerToggles />);
         const buttons = screen.getAllByRole('button');
-        expect(buttons.length).toBe(4);
+        expect(buttons.length).toBe(5);
     });
 
     it('marks active layers', () => {
@@ -52,11 +53,12 @@ describe('LayerToggles', () => {
         expect(mockToggleLayer).toHaveBeenCalledWith('roads');
     });
 
-    it('renders all four icons', () => {
+    it('renders all five icons', () => {
         render(<LayerToggles />);
         expect(screen.getByTestId('icon-building')).toBeTruthy();
         expect(screen.getByTestId('icon-road')).toBeTruthy();
         expect(screen.getByTestId('icon-pin')).toBeTruthy();
+        expect(screen.getByTestId('icon-terrain')).toBeTruthy();
         expect(screen.getByTestId('icon-heatmap')).toBeTruthy();
     });
 

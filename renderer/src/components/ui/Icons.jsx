@@ -67,6 +67,14 @@ export const HeatmapIcon = (props) => (
     </Icon>
 );
 
+/** Terrain — mountain peaks wireframe */
+export const TerrainIcon = (props) => (
+    <Icon {...props}>
+        <path d="M2 20 L7 10 L10 14 L14 6 L18 12 L22 20 Z" />
+        <path d="M2 20 L22 20" />
+    </Icon>
+);
+
 // ─── Actions ────────────────────────────────────────────
 
 /** Screenshot — camera */

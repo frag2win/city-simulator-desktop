@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('city:error', (_event, data) => callback(data));
     },
 
+    // ─── Terrain ───────────────────────────────────────────
+    loadTerrain: (bbox, resolution) => ipcRenderer.invoke('terrain:load', { bbox, resolution }),
+
     // ─── Simulation ────────────────────────────────────────
     startSimulation: (config) => ipcRenderer.invoke('simulation:start', config),
     sendSimulationEvent: (event) => ipcRenderer.invoke('simulation:event', event),

@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createBuildingGroup } from '../../three/buildingGeometry';
 import { createRoadGroup } from '../../three/roadGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
+import { createTerrainGroup } from '../../three/terrainGeometry';
 import { DayNightCycle } from '../../three/dayNightCycle';
 import { VehicleAgents } from '../../three/vehicleAgents';
 import { PedestrianAgents } from '../../three/pedestrianAgents';
@@ -32,6 +33,7 @@ export default function CityScene() {
     const pedsRef = useRef(null);
     const heatmapRef = useRef(null);
     const lodRef = useRef(null);
+    const terrainRef = useRef(null);
 
     const raycasterRef = useRef(new THREE.Raycaster());
     const mouseRef = useRef(new THREE.Vector2());
@@ -54,6 +56,7 @@ export default function CityScene() {
     }, []);
 
     const { cityData, layers, setSelectedEntity, setTimeOfDay, setAgentCounts } = useCityStore();
+    const terrainData = useCityStore((s) => s.terrainData);
 
     const initScene = useCallback(() => {
         if (!containerRef.current) return;
@@ -269,6 +272,7 @@ export default function CityScene() {
             new THREE.MeshPhongMaterial({ color: 0x0c0c16 })
         );
         ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -6;            // just below terrain offset (-5) so wireframe sits above
         ground.receiveShadow = true;
         ground.name = 'ground';
         scene.add(ground);
@@ -289,6 +293,11 @@ export default function CityScene() {
         if (pedsRef.current) pedsRef.current.dispose();
         if (heatmapRef.current) heatmapRef.current.dispose();
         if (lodRef.current) lodRef.current.dispose();
+        if (terrainRef.current) {
+            scene.remove(terrainRef.current);
+            disposeGroup(terrainRef.current);
+            terrainRef.current = null;
+        }
 
         const features = cityData.features;
         if (features.length === 0) return;
@@ -409,6 +418,34 @@ export default function CityScene() {
 
     }, [cityData, sceneReady, setAgentCounts]);
 
+    // Build terrain mesh when elevation data arrives
+    useEffect(() => {
+        if (!sceneReady || !sceneRef.current || !terrainData?.grid) return;
+        const scene = sceneRef.current;
+
+        // Dispose previous terrain
+        if (terrainRef.current) {
+            scene.remove(terrainRef.current);
+            disposeGroup(terrainRef.current);
+            terrainRef.current = null;
+        }
+
+        // Need the city bbox to position the terrain correctly
+        const bbox = cityData?.bbox;
+        if (!bbox || bbox.length < 4) {
+            console.warn('[CityScene] No city bbox for terrain placement');
+            return;
+        }
+
+        try {
+            const terrainGroup = createTerrainGroup(terrainData, bbox);
+            scene.add(terrainGroup);
+            terrainRef.current = terrainGroup;
+        } catch (err) {
+            console.error('[CityScene] Terrain build failed:', err);
+        }
+    }, [terrainData, sceneReady, cityData]);
+
     // Layer visibility
     useEffect(() => {
         if (!cityGroupRef.current) return;
@@ -420,6 +457,7 @@ export default function CityScene() {
         if (r) r.visible = layers.roads;
         if (a) a.visible = layers.amenities;
         if (heatmapRef.current) heatmapRef.current.setVisible(!!layers.heatmap);
+        if (terrainRef.current) terrainRef.current.visible = !!layers.terrain;
     }, [layers]);
 
     function disposeGroup(group) {

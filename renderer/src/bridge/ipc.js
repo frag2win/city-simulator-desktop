@@ -21,6 +21,9 @@ export const ipc = {
     onCityProgress: (cb) => api?.onCityProgress(cb),
     onCityError: (cb) => api?.onCityError(cb),
 
+    // Terrain
+    loadTerrain: (bbox, resolution) => api?.loadTerrain(bbox, resolution),
+
     // Simulation
     startSimulation: (config) => api?.startSimulation(config),
     sendSimulationEvent: (event) => api?.sendSimulationEvent(event),

@@ -34,8 +34,12 @@ const useCityStore = create((set, get) => ({
         buildings: true,
         roads: true,
         amenities: true,
+        terrain: true,
         heatmap: false,
     },
+
+    // ─── Terrain ─────────────────────────────
+    terrainData: null,
 
     // ─── Simulation ──────────────────────────
     isPlaying: true,
@@ -62,6 +66,8 @@ const useCityStore = create((set, get) => ({
         error: null,
     }),
 
+    setTerrainData: (data) => set({ terrainData: data }),
+
     setError: (error) => set({
         error,
         isLoading: false,
@@ -83,6 +89,7 @@ const useCityStore = create((set, get) => ({
     clearCity: () => set({
         cityData: null,
         cityName: '',
+        terrainData: null,
         error: null,
     }),
 
@@ -110,6 +117,9 @@ const useCityStore = create((set, get) => ({
             }
 
             setCityData(result.data || result);
+
+            // Kick off terrain loading in the background
+            get().loadTerrain(bbox);
         } catch (err) {
             setError(err.message || 'Unknown error loading city');
         }
@@ -147,6 +157,28 @@ const useCityStore = create((set, get) => ({
             }
         } catch {
             // silently ignore cache delete errors
+        }
+    },
+
+    /**
+     * Load terrain elevation grid via IPC → sidecar.
+     */
+    loadTerrain: async (bbox) => {
+        try {
+            const api = window.electronAPI;
+            if (!api?.loadTerrain) {
+                console.warn('[Store] loadTerrain: electronAPI.loadTerrain not available');
+                return;
+            }
+
+            console.log('[Store] loadTerrain: fetching terrain for bbox', bbox);
+            const result = await api.loadTerrain(bbox, 48);
+            console.log('[Store] loadTerrain: result', result ? { error: result.error, hasData: !!result.data, gridRows: result.data?.grid?.length } : 'null');
+            if (result && !result.error && result.data) {
+                set({ terrainData: result.data });
+            }
+        } catch (err) {
+            console.warn('[Store] loadTerrain failed:', err.message);
         }
     },
 
