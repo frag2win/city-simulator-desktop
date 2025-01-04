@@ -22,12 +22,26 @@ function generateToken() {
 
 /**
  * Get the Python executable path.
- * In dev: uses system Python. In production: uses bundled PyInstaller binary.
+ * Priority: PYTHON_PATH env var → .venv in sidecar dir → system python.
  */
 function getPythonPath() {
-    // In production, the sidecar is bundled as a PyInstaller binary
-    // For now (dev mode), use system Python
-    return process.env.PYTHON_PATH || 'python';
+    if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH;
+
+    const fs = require('fs');
+    const sidecarDir = getSidecarPath();
+
+    // Check for .venv Python (Windows vs Unix)
+    const venvPython = process.platform === 'win32'
+        ? path.join(sidecarDir, '.venv', 'Scripts', 'python.exe')
+        : path.join(sidecarDir, '.venv', 'bin', 'python');
+
+    if (fs.existsSync(venvPython)) {
+        logger.info('Using venv Python', { path: venvPython });
+        return venvPython;
+    }
+
+    logger.info('No venv found, using system Python');
+    return 'python';
 }
 
 /**
