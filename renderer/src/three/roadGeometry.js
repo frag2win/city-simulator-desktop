@@ -112,8 +112,8 @@ function createRoadStrip(feature) {
 
         const material = new THREE.MeshStandardMaterial({
             color,
-            emissive: new THREE.Color(0x0a0a14),
-            emissiveIntensity: 0.2,
+            emissive: new THREE.Color(0x1a1a2e),
+            emissiveIntensity: 0.35,
             roughness: 0.9,
             metalness: 0.0,
             side: THREE.DoubleSide,

@@ -56,8 +56,8 @@ export function createBuildingGroup(features) {
         const color = getBuildingColor(height);
         const mat = new THREE.MeshPhongMaterial({
             color,
-            emissive: new THREE.Color(0x111122),
-            emissiveIntensity: 0.15,
+            emissive: new THREE.Color(0x223344),
+            emissiveIntensity: 0.4,
             flatShading: true,
             shininess: 30,
             side: THREE.DoubleSide,

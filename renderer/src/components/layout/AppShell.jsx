@@ -10,6 +10,7 @@ import SimulationControls from '../ui/SimulationControls';
 import ScreenshotExport from '../ui/ScreenshotExport';
 import CameraPresets from '../ui/CameraPresets';
 import UpdateNotice from '../ui/UpdateNotice';
+import { ExportIcon, SaveIcon, SearchIcon, FolderOpenIcon, DatabaseIcon, CityIcon } from '../ui/Icons';
 import useCityStore from '../../store/cityStore';
 
 const ipc = window.electronAPI;
@@ -92,20 +93,20 @@ export default function AppShell() {
                                 <div className="hud__divider" />
                                 <ScreenshotExport />
                                 <button className="hud__btn" onClick={() => exportCity('geojson')} title="Export as GeoJSON (Ctrl+E)">
-                                    📤
+                                    <ExportIcon />
                                 </button>
                                 <button className="hud__btn" onClick={() => exportCity('city')} title="Save as .city file (Ctrl+Shift+E)">
-                                    💿
+                                    <SaveIcon />
                                 </button>
                                 <div className="hud__divider" />
                                 <button className="hud__btn" onClick={() => setShowSearch(true)} title="Load another city (Ctrl+L)">
-                                    🔍
+                                    <SearchIcon />
                                 </button>
                                 <button className="hud__btn" onClick={() => openCityFile()} title="Open file">
-                                    📂
+                                    <FolderOpenIcon />
                                 </button>
                                 <button className="hud__btn" onClick={() => setShowCacheManager(true)} title="Cache manager">
-                                    💾
+                                    <DatabaseIcon />
                                 </button>
                             </div>
                         </div>
@@ -122,7 +123,7 @@ export default function AppShell() {
                 ) : (
                     <div className="viewport">
                         <div className="viewport__empty">
-                            <div className="viewport__icon">🏙️</div>
+                            <div className="viewport__icon"><CityIcon /></div>
                             <h1 className="viewport__heading">City Simulator</h1>
                             <p className="viewport__subtext">
                                 Load a city to begin. Enter coordinates or search for a city name

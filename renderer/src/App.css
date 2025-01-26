@@ -378,13 +378,14 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: var(--text-base);
+  color: var(--text-secondary);
   transition: all var(--transition-fast);
 }
 
 .hud__btn:hover {
   background: rgba(34, 34, 46, 0.9);
   border-color: var(--accent-primary);
+  color: var(--text-primary);
 }
 
 /* ─── Status Bar ────────────────────────── */
@@ -977,25 +978,28 @@ body {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 0.85rem;
+  padding: 6px 8px;
   cursor: pointer;
   transition: all 0.2s;
   opacity: 0.4;
-  filter: grayscale(1);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .layer-toggle:hover {
   opacity: 0.7;
   background: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
 }
 
 .layer-toggle.active {
   opacity: 1;
-  filter: none;
   border-color: var(--accent-primary);
   background: var(--accent-glow);
   box-shadow: 0 0 8px var(--accent-glow);
+  color: var(--accent-secondary);
 }
 
 /* ──────────────────────────────────────────────
@@ -1045,11 +1049,13 @@ body {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 0.9rem;
+  padding: 5px 10px;
   cursor: pointer;
   transition: all 0.2s;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sim-controls__btn:hover {
@@ -1106,6 +1112,12 @@ body {
   font-family: var(--font-mono);
 }
 
+.sim-controls__agents span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
 /* ──────────────────────────────────────────────
    Camera Presets — bottom-right
    ────────────────────────────────────────────── */
@@ -1129,10 +1141,13 @@ body {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 0.85rem;
+  padding: 6px 8px;
   cursor: pointer;
   transition: all 0.2s;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .camera-preset__btn:hover {
@@ -1187,7 +1202,9 @@ body {
 }
 
 .screenshot-menu__item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   padding: 6px 10px;
   background: transparent;

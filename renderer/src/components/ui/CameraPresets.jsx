@@ -2,6 +2,7 @@
  * CameraPresets — Quick camera angle buttons.
  */
 import React from 'react';
+import { PerspectiveIcon, TopDownIcon, StreetIcon } from './Icons';
 
 // Global camera/controls ref (set by CityScene)
 let _camera = null;
@@ -20,9 +21,9 @@ export function setCityBounds(center, maxDim) {
 }
 
 const PRESETS = [
-    { label: '🔭', title: 'Perspective', angle: 'perspective' },
-    { label: '⬇️', title: 'Top-down', angle: 'topdown' },
-    { label: '🏙️', title: 'Street level', angle: 'street' },
+    { icon: <PerspectiveIcon />, title: 'Perspective', angle: 'perspective' },
+    { icon: <TopDownIcon />, title: 'Top-down', angle: 'topdown' },
+    { icon: <StreetIcon />, title: 'Street level', angle: 'street' },
 ];
 
 export default function CameraPresets() {
@@ -58,7 +59,7 @@ export default function CameraPresets() {
                     onClick={() => applyPreset(p.angle)}
                     title={p.title}
                 >
-                    {p.label}
+                    {p.icon}
                 </button>
             ))}
         </div>

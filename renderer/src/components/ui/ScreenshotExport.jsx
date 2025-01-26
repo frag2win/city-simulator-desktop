@@ -5,6 +5,7 @@
  */
 import React, { useState } from 'react';
 import useCityStore from '../../store/cityStore';
+import { CameraIcon, ShutterIcon, BoltIcon } from './Icons';
 
 // Global renderer reference (set by CityScene)
 let _renderer = null;
@@ -90,7 +91,7 @@ export default function ScreenshotExport() {
                 title="Screenshot (PNG)"
                 id="screenshot-btn"
             >
-                📸
+                <CameraIcon />
             </button>
 
             {showMenu && (
@@ -103,7 +104,7 @@ export default function ScreenshotExport() {
                             title={res.title}
                             disabled={capturing}
                         >
-                            📷 {res.label}
+                            <ShutterIcon size={12} /> {res.label}
                         </button>
                     ))}
                     <button
@@ -111,7 +112,7 @@ export default function ScreenshotExport() {
                         onClick={() => { setShowMenu(false); captureScreenshot(1); }}
                         disabled={capturing}
                     >
-                        ⚡ Quick Save
+                        <BoltIcon size={12} /> Quick Save
                     </button>
                 </div>
             )}

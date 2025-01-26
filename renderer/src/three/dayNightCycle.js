@@ -6,17 +6,17 @@ import * as THREE from 'three';
 
 // Sky colors for each phase (interpolated smoothly)
 const SKY_COLORS = {
-    night: new THREE.Color(0x0c0c20),
-    dawn: new THREE.Color(0x1a1030),
+    night: new THREE.Color(0x141428),
+    dawn: new THREE.Color(0x2a1838),
     sunrise: new THREE.Color(0x2a1520),
     day: new THREE.Color(0x080810),
     sunset: new THREE.Color(0x201018),
-    dusk: new THREE.Color(0x100818),
+    dusk: new THREE.Color(0x181025),
 };
 
 // Sun colors
 const SUN_COLORS = {
-    night: new THREE.Color(0x111133),
+    night: new THREE.Color(0x8899bb),   // Bright moonlight blue
     dawn: new THREE.Color(0xff8844),
     day: new THREE.Color(0xffeedd),
     sunset: new THREE.Color(0xff6633),
@@ -60,10 +60,10 @@ export class DayNightCycle {
 
             if (elevation < 0.1) {
                 sunColor.lerpColors(SUN_COLORS.night, SUN_COLORS.dawn, elevation * 10);
-                this.sunLight.intensity = 0.5 + elevation * 3;
+                this.sunLight.intensity = 0.7 + elevation * 3;
             } else if (elevation < 0.5) {
                 sunColor.lerpColors(SUN_COLORS.dawn, SUN_COLORS.day, (elevation - 0.1) / 0.4);
-                this.sunLight.intensity = 0.8 + elevation * 0.8;
+                this.sunLight.intensity = 0.9 + elevation * 0.8;
             } else {
                 sunColor.copy(SUN_COLORS.day);
                 this.sunLight.intensity = 1.2;
@@ -71,14 +71,14 @@ export class DayNightCycle {
             this.sunLight.color.copy(sunColor);
         }
 
-        // Ambient light — dimmer at night but still visible
+        // Ambient light — keep bright enough at night for city visibility
         if (this.ambientLight) {
             const isNight = sunY < 0;
-            this.ambientLight.intensity = isNight ? 0.55 : 0.5 + Math.sin(angle) * 0.3;
+            this.ambientLight.intensity = isNight ? 0.9 : 0.6 + Math.sin(angle) * 0.3;
             this.ambientLight.color.setHSL(
                 isNight ? 0.62 : 0.58,
-                isNight ? 0.15 : 0.15,
-                isNight ? 0.5 : 0.6
+                isNight ? 0.12 : 0.15,
+                isNight ? 0.7 : 0.65
             );
         }
 

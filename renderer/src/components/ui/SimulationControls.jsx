@@ -3,6 +3,7 @@
  */
 import React from 'react';
 import useCityStore from '../../store/cityStore';
+import { PlayIcon, PauseIcon, CarIcon, PedestrianIcon } from './Icons';
 
 const SPEEDS = [0.5, 1, 2, 4];
 
@@ -17,7 +18,7 @@ export default function SimulationControls() {
                 onClick={() => setIsPlaying(!isPlaying)}
                 title={isPlaying ? 'Pause simulation' : 'Play simulation'}
             >
-                {isPlaying ? '⏸' : '▶'}
+                {isPlaying ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
             </button>
 
             {/* Speed selector */}
@@ -43,8 +44,8 @@ export default function SimulationControls() {
 
             {/* Agent counts */}
             <div className="sim-controls__agents">
-                <span title="Vehicles">🚗 {agentCounts.vehicles}</span>
-                <span title="Pedestrians">🚶 {agentCounts.pedestrians}</span>
+                <span title="Vehicles"><CarIcon size={13} /> {agentCounts.vehicles}</span>
+                <span title="Pedestrians"><PedestrianIcon size={13} /> {agentCounts.pedestrians}</span>
             </div>
         </div>
     );
