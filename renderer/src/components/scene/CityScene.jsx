@@ -36,7 +36,7 @@ export default function CityScene() {
         // Scene
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x080810);
-        scene.fog = new THREE.FogExp2(0x080810, 0.00004);
+        scene.fog = new THREE.FogExp2(0x080810, 0.00003);
         sceneRef.current = scene;
 
         // Camera
@@ -229,13 +229,22 @@ export default function CityScene() {
             const size = box.getSize(new THREE.Vector3());
             const center = box.getCenter(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.z, 200);
-            const dist = maxDim * 0.9;
+            const dist = maxDim * 0.7; // closer than before
+
+            console.log(`[CityScene] Bounds: ${size.x.toFixed(0)}×${size.y.toFixed(0)}×${size.z.toFixed(0)}, Center: ${center.x.toFixed(0)},${center.y.toFixed(0)},${center.z.toFixed(0)}, Dist: ${dist.toFixed(0)}`);
+
+            // Auto-adjust fog for city size
+            if (sceneRef.current?.fog) {
+                const fogDensity = Math.min(0.00008, 2.0 / maxDim);
+                sceneRef.current.fog.density = fogDensity;
+                console.log(`[CityScene] Fog density: ${fogDensity.toFixed(6)}`);
+            }
 
             if (cameraRef.current && controlsRef.current) {
                 cameraRef.current.position.set(
-                    center.x + dist * 0.5,
-                    dist * 0.45,
-                    center.z + dist * 0.5
+                    center.x + dist * 0.4,
+                    dist * 0.35,
+                    center.z + dist * 0.4
                 );
                 controlsRef.current.target.set(center.x, 0, center.z);
                 controlsRef.current.update();
