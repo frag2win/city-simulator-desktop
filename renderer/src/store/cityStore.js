@@ -91,22 +91,16 @@ const useCityStore = create((set, get) => ({
     },
 
     /**
-     * Load cached cities list from sidecar.
+     * Load cached cities list via IPC → main process → sidecar.
      */
     fetchCachedCities: async () => {
         try {
             const api = window.electronAPI;
-            if (!api?.getSidecarInfo) return;
+            if (!api?.listCachedCities) return;
 
-            const info = await api.getSidecarInfo();
-            if (!info?.port) return;
-
-            const response = await fetch(`http://127.0.0.1:${info.port}/city/cache`, {
-                headers: { 'Authorization': `Bearer ${info.token}` },
-            });
-            if (response.ok) {
-                const cities = await response.json();
-                set({ cachedCities: cities });
+            const result = await api.listCachedCities();
+            if (result && !result.error) {
+                set({ cachedCities: result.data || result });
             }
         } catch (err) {
             console.error('Failed to fetch cached cities:', err);
@@ -114,21 +108,15 @@ const useCityStore = create((set, get) => ({
     },
 
     /**
-     * Delete a cached city.
+     * Delete a cached city via IPC.
      */
     deleteCachedCity: async (cacheId) => {
         try {
             const api = window.electronAPI;
-            if (!api?.getSidecarInfo) return;
+            if (!api?.deleteCachedCity) return;
 
-            const info = await api.getSidecarInfo();
-            if (!info?.port) return;
-
-            const response = await fetch(`http://127.0.0.1:${info.port}/city/cache/${cacheId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${info.token}` },
-            });
-            if (response.ok) {
+            const result = await api.deleteCachedCity(cacheId);
+            if (result && !result.error) {
                 // Refresh the list
                 get().fetchCachedCities();
             }

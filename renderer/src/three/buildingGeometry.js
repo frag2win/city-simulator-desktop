@@ -1,18 +1,17 @@
 /**
  * buildingGeometry.js — Extrudes GeoJSON polygon buildings into 3D meshes.
- * Each building becomes an ExtrudeGeometry with height from properties.
+ * Uses a robust approach: attempts ExtrudeGeometry first, falls back to
+ * bounding-box BoxGeometry if triangulation fails on complex polygons.
  */
 import * as THREE from 'three';
 
 // Color palette for buildings based on height
 const BUILDING_COLORS = {
-    low: new THREE.Color(0x4a5568),      // Gray — 1-3 floors
-    medium: new THREE.Color(0x5a6577),   // Blue-gray — 4-8 floors
-    tall: new THREE.Color(0x6b7a8d),     // Lighter — 9-15 floors
-    high: new THREE.Color(0x7c8da0),     // Steel — 16+ floors
+    low: 0x5a6a7a,      // Gray — 1-3 floors
+    medium: 0x6a7a8a,   // Blue-gray — 4-8 floors
+    tall: 0x7a8a9a,     // Lighter — 9-15 floors
+    high: 0x8a9aaa,     // Steel — 16+ floors
 };
-
-const BUILDING_EDGE_COLOR = new THREE.Color(0x2d3748);
 
 /**
  * Create a Three.js group containing all building meshes from GeoJSON.
@@ -25,17 +24,27 @@ export function createBuildingGroup(features) {
         (f) => f.properties?.osm_type === 'building' && f.geometry?.type === 'Polygon'
     );
 
-    if (buildings.length === 0) return group;
+    console.log(`[BuildingGeometry] Found ${buildings.length} building features`);
 
-    // Use instanced meshes for performance when many buildings are similar
-    // But for varied heights, individual meshes are needed
+    let extrudeCount = 0;
+    let boxFallbackCount = 0;
+    let failCount = 0;
+
     for (const feature of buildings) {
         const mesh = createBuildingMesh(feature);
         if (mesh) {
+            if (mesh.userData._fallback) {
+                boxFallbackCount++;
+            } else {
+                extrudeCount++;
+            }
             group.add(mesh);
+        } else {
+            failCount++;
         }
     }
 
+    console.log(`[BuildingGeometry] Created ${extrudeCount} extruded, ${boxFallbackCount} box fallbacks, ${failCount} failed`);
     return group;
 }
 
@@ -44,73 +53,113 @@ export function createBuildingGroup(features) {
  */
 function createBuildingMesh(feature) {
     const coords = feature.geometry.coordinates;
-    if (!coords || !coords[0] || coords[0].length < 3) return null;
+    if (!coords || !coords[0] || coords[0].length < 4) return null;
 
     const height = feature.properties?.height || 10.5;
     const levels = feature.properties?.building_levels || 3;
 
+    // Try extrude first, then fall back to box
+    let mesh = tryExtrudeMesh(coords[0], height, levels);
+    if (!mesh) {
+        mesh = tryBoxFallback(coords[0], height, levels);
+        if (mesh) mesh.userData._fallback = true;
+    }
+
+    if (mesh) {
+        mesh.userData = {
+            ...mesh.userData,
+            type: 'building',
+            osm_id: feature.properties?.osm_id,
+            name: feature.properties?.name,
+            height,
+            levels,
+        };
+    }
+
+    return mesh;
+}
+
+/**
+ * Attempt to create an extruded mesh from polygon ring.
+ */
+function tryExtrudeMesh(ring, height, levels) {
     try {
-        // Create a 2D shape from the polygon ring
-        const ring = coords[0]; // Outer ring only
         const shape = new THREE.Shape();
 
-        // Move to first point
+        // Ring coords are [x, y, 0] in projected meters
         shape.moveTo(ring[0][0], ring[0][1]);
-
-        // Line to subsequent points
         for (let i = 1; i < ring.length; i++) {
             shape.lineTo(ring[i][0], ring[i][1]);
         }
 
-        shape.closePath();
-
-        // Extrude settings
-        const extrudeSettings = {
+        const geometry = new THREE.ExtrudeGeometry(shape, {
             depth: height,
             bevelEnabled: false,
-        };
+        });
 
-        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        // Check if geometry is valid (has vertices)
+        if (!geometry.attributes.position || geometry.attributes.position.count === 0) {
+            geometry.dispose();
+            return null;
+        }
 
         // Rotate so extrusion goes UP (Y axis) instead of Z
         geometry.rotateX(-Math.PI / 2);
 
-        // Color based on height
         const color = getBuildingColor(levels);
-        const material = new THREE.MeshPhongMaterial({
+        const material = new THREE.MeshStandardMaterial({
             color,
-            flatShading: true,
-            transparent: true,
-            opacity: 0.92,
+            roughness: 0.7,
+            metalness: 0.1,
         });
 
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
-        // Store metadata for selection
-        mesh.userData = {
-            type: 'building',
-            osm_id: feature.properties?.osm_id,
-            name: feature.properties?.name,
-            height,
-            levels,
-            tags: feature.properties?.tags || {},
-        };
+        return mesh;
+    } catch {
+        return null;
+    }
+}
 
-        // Add edges for visual clarity
-        const edgesGeometry = new THREE.EdgesGeometry(geometry, 15);
-        const edgesMaterial = new THREE.LineBasicMaterial({
-            color: BUILDING_EDGE_COLOR,
-            transparent: true,
-            opacity: 0.3,
+/**
+ * Fallback: create a simple box at the polygon's centroid.
+ */
+function tryBoxFallback(ring, height, levels) {
+    try {
+        // Compute centroid and approximate size
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+
+        for (const [x, y] of ring) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+
+        const w = Math.max(maxX - minX, 2);
+        const d = Math.max(maxY - minY, 2);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+
+        const geom = new THREE.BoxGeometry(w, height, d);
+        const color = getBuildingColor(levels);
+        const mat = new THREE.MeshStandardMaterial({
+            color,
+            roughness: 0.7,
+            metalness: 0.1,
         });
-        const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
-        mesh.add(edges);
+
+        const mesh = new THREE.Mesh(geom, mat);
+        // Position: X = east-west, Y = up (half height), Z = negative north-south
+        mesh.position.set(cx, height / 2, -cy);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
 
         return mesh;
-    } catch (err) {
-        // Skip malformed polygons silently
+    } catch {
         return null;
     }
 }

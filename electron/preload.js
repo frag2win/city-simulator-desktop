@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // ─── City Data ─────────────────────────────────────────
     loadCity: (bbox) => ipcRenderer.invoke('city:load', { bbox }),
+    listCachedCities: () => ipcRenderer.invoke('city:cache:list'),
+    deleteCachedCity: (cacheId) => ipcRenderer.invoke('city:cache:delete', { cacheId }),
     onCityLoaded: (callback) => {
         ipcRenderer.on('city:loaded', (_event, data) => callback(data));
     },

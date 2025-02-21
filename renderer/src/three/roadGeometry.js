@@ -1,25 +1,25 @@
 /**
  * roadGeometry.js — Renders GeoJSON LineString roads as flat ribbons.
- * Roads are drawn as thin extruded strips lying on the ground plane.
+ * Uses simple BufferGeometry strips for reliability.
  */
 import * as THREE from 'three';
 
 // Road colors by type
 const ROAD_COLORS = {
-    motorway: new THREE.Color(0xe88d5a),    // Orange
-    trunk: new THREE.Color(0xd4885a),       // Amber
-    primary: new THREE.Color(0xc9a652),     // Gold
-    secondary: new THREE.Color(0x8b9fad),   // Steel blue
-    tertiary: new THREE.Color(0x7a8c9a),    // Muted blue
-    residential: new THREE.Color(0x5c6b77), // Dark gray-blue
-    service: new THREE.Color(0x4a5660),     // Darker
-    footway: new THREE.Color(0x6b8070),     // Green-gray
-    cycleway: new THREE.Color(0x5a8a6a),    // Green
-    path: new THREE.Color(0x5a6a5a),        // Dim green
-    default: new THREE.Color(0x5c6b77),     // Fallback
+    motorway: 0xe88d5a,
+    trunk: 0xd4885a,
+    primary: 0xc9a652,
+    secondary: 0x8b9fad,
+    tertiary: 0x7a8c9a,
+    residential: 0x5c6b77,
+    service: 0x4a5660,
+    footway: 0x6b8070,
+    cycleway: 0x5a8a6a,
+    path: 0x5a6a5a,
+    default: 0x5c6b77,
 };
 
-// Road widths in scene units (meters from Cartesian projection)
+// Road widths in meters
 const ROAD_WIDTHS = {
     motorway: 7.0,
     trunk: 6.0,
@@ -45,57 +45,83 @@ export function createRoadGroup(features) {
         (f) => f.properties?.osm_type === 'highway' && f.geometry?.type === 'LineString'
     );
 
-    if (roads.length === 0) return group;
+    console.log(`[RoadGeometry] Found ${roads.length} road features`);
 
-    // Group roads by type for batched rendering
-    const roadsByType = {};
+    let created = 0;
+
     for (const road of roads) {
-        const type = road.properties?.highway_type || 'default';
-        if (!roadsByType[type]) roadsByType[type] = [];
-        roadsByType[type].push(road);
-    }
-
-    // Create one merged geometry per road type for performance
-    for (const [type, typeRoads] of Object.entries(roadsByType)) {
-        const color = ROAD_COLORS[type] || ROAD_COLORS.default;
-        const width = ROAD_WIDTHS[type] || ROAD_WIDTHS.default;
-
-        for (const road of typeRoads) {
-            const mesh = createRoadMesh(road, color, width);
-            if (mesh) {
-                group.add(mesh);
-            }
+        const mesh = createRoadStrip(road);
+        if (mesh) {
+            group.add(mesh);
+            created++;
         }
     }
 
+    console.log(`[RoadGeometry] Created ${created} road meshes`);
     return group;
 }
 
 /**
- * Create a flat ribbon mesh for a single road.
+ * Create a flat ribbon mesh for a single road using a simple strip.
+ * This avoids CatmullRomCurve3 which can fail on short or collinear segments.
  */
-function createRoadMesh(feature, color, width) {
+function createRoadStrip(feature) {
     const coords = feature.geometry.coordinates;
     if (!coords || coords.length < 2) return null;
 
+    const type = feature.properties?.highway_type || 'default';
+    const color = ROAD_COLORS[type] || ROAD_COLORS.default;
+    const halfWidth = (ROAD_WIDTHS[type] || ROAD_WIDTHS.default) / 2;
+
     try {
-        // Create road as a flat ribbon using a tube-like approach
-        const points = coords.map((c) => new THREE.Vector3(c[0], 0.15, -c[1])); // Slight Y offset above ground
+        // Build a triangle strip for the road ribbon
+        const vertices = [];
+        const indices = [];
 
-        if (points.length < 2) return null;
+        for (let i = 0; i < coords.length; i++) {
+            const [x, y] = coords[i]; // projected [x_meters, y_meters, 0]
 
-        // Create path from points
-        const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.1);
+            // Compute perpendicular direction for width
+            let dx, dy;
+            if (i < coords.length - 1) {
+                dx = coords[i + 1][0] - x;
+                dy = coords[i + 1][1] - y;
+            } else {
+                dx = x - coords[i - 1][0];
+                dy = y - coords[i - 1][1];
+            }
 
-        // Create tube geometry (flat ribbon)
-        const segments = Math.max(points.length * 2, 4);
-        const geometry = new THREE.TubeGeometry(curve, segments, width / 2, 4, false);
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len === 0) continue;
 
-        const material = new THREE.MeshPhongMaterial({
+            // Perpendicular (rotate 90°)
+            const nx = -dy / len * halfWidth;
+            const ny = dx / len * halfWidth;
+
+            // Left and right edge points
+            // Map: X = x, Y = 0.2 (road surface), Z = -y
+            const idx = vertices.length / 3;
+            vertices.push(x + nx, 0.2, -(y + ny));  // left
+            vertices.push(x - nx, 0.2, -(y - ny));  // right
+
+            if (idx >= 2) {
+                indices.push(idx - 2, idx - 1, idx);
+                indices.push(idx - 1, idx + 1, idx);
+            }
+        }
+
+        if (vertices.length < 12) return null; // Need at least 2 segments
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshStandardMaterial({
             color,
-            flatShading: false,
-            transparent: true,
-            opacity: 0.85,
+            roughness: 0.9,
+            metalness: 0.0,
+            side: THREE.DoubleSide,
         });
 
         const mesh = new THREE.Mesh(geometry, material);
@@ -105,8 +131,7 @@ function createRoadMesh(feature, color, width) {
             type: 'road',
             osm_id: feature.properties?.osm_id,
             name: feature.properties?.name,
-            highway_type: feature.properties?.highway_type,
-            tags: feature.properties?.tags || {},
+            highway_type: type,
         };
 
         return mesh;
