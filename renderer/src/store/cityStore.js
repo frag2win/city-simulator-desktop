@@ -34,6 +34,7 @@ const useCityStore = create((set, get) => ({
         buildings: true,
         roads: true,
         amenities: true,
+        heatmap: false,
     },
 
     // ─── Simulation ──────────────────────────
@@ -126,8 +127,8 @@ const useCityStore = create((set, get) => ({
             if (result && !result.error) {
                 set({ cachedCities: result.data || result });
             }
-        } catch (err) {
-            console.error('Failed to fetch cached cities:', err);
+        } catch {
+            // silently ignore cache list errors
         }
     },
 
@@ -144,8 +145,78 @@ const useCityStore = create((set, get) => ({
                 // Refresh the list
                 get().fetchCachedCities();
             }
+        } catch {
+            // silently ignore cache delete errors
+        }
+    },
+
+    /**
+     * Export current city data as GeoJSON or .city file.
+     */
+    exportCity: async (format = 'geojson') => {
+        try {
+            const api = window.electronAPI;
+            if (!api?.exportFile) return;
+
+            const { cityData, cityName } = get();
+            if (!cityData) return;
+
+            const result = await api.exportFile({
+                format,
+                data: cityData,
+                cityName: cityName || 'city-export',
+            });
+            return result;
+        } catch {
+            // export failure handled silently
+        }
+    },
+
+    /**
+     * Open a .city / .geojson file from disk.
+     */
+    openCityFile: async () => {
+        try {
+            const api = window.electronAPI;
+            if (!api?.openFile) return;
+
+            const result = await api.openFile();
+            if (result?.error) {
+                set({ error: result.message });
+                return;
+            }
+            if (result?.canceled) return;
+
+            if (result?.data) {
+                set({
+                    cityData: result.data,
+                    cityName: result.cityName || 'Imported',
+                    isLoading: false,
+                    showProgress: false,
+                    error: null,
+                });
+            }
         } catch (err) {
-            console.error('Failed to delete cached city:', err);
+            set({ error: err.message || 'Failed to open city file' });
+        }
+    },
+
+    /**
+     * Save screenshot of current viewport via native dialog.
+     */
+    saveScreenshot: async (dataUrl) => {
+        try {
+            const api = window.electronAPI;
+            if (!api?.saveScreenshot) return;
+
+            const { cityName } = get();
+            const result = await api.saveScreenshot({
+                dataUrl,
+                cityName: cityName || 'screenshot',
+            });
+            return result;
+        } catch {
+            // screenshot save failure handled silently
         }
     },
 }));

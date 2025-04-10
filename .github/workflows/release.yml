@@ -1,0 +1,72 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*" # Trigger on version tags like v1.0.0
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            city-simulator-desktop/package-lock.json
+            city-simulator-desktop/renderer/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        working-directory: city-simulator-desktop/python-sidecar
+        run: pip install -r requirements.txt
+
+      - name: Install root dependencies
+        working-directory: city-simulator-desktop
+        run: npm ci
+
+      - name: Install renderer dependencies
+        working-directory: city-simulator-desktop/renderer
+        run: npm ci
+
+      - name: Build renderer
+        working-directory: city-simulator-desktop
+        run: npm run build:renderer
+
+      - name: Build Electron app
+        working-directory: city-simulator-desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --${{ matrix.platform }} --publish always
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: |
+            city-simulator-desktop/dist/*.exe
+            city-simulator-desktop/dist/*.dmg
+            city-simulator-desktop/dist/*.AppImage
+            city-simulator-desktop/dist/*.deb
+            city-simulator-desktop/dist/*.yml
+          if-no-files-found: ignore

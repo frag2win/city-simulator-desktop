@@ -13,7 +13,7 @@ export default function CitySearchBar() {
     const [isGeocoding, setIsGeocoding] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
     const inputRef = useRef(null);
-    const { showSearch, setShowSearch, loadCity, startLoading } = useCityStore();
+    const { showSearch, setShowSearch, loadCity } = useCityStore();
 
     // Focus input when opened
     useEffect(() => {

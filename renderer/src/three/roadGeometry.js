@@ -45,19 +45,12 @@ export function createRoadGroup(features) {
         (f) => f.properties?.osm_type === 'highway' && f.geometry?.type === 'LineString'
     );
 
-    console.log(`[RoadGeometry] Found ${roads.length} road features`);
-
-    let created = 0;
-
     for (const road of roads) {
         const mesh = createRoadStrip(road);
         if (mesh) {
             group.add(mesh);
-            created++;
         }
     }
-
-    console.log(`[RoadGeometry] Created ${created} road meshes`);
     return group;
 }
 
@@ -119,6 +112,8 @@ function createRoadStrip(feature) {
 
         const material = new THREE.MeshStandardMaterial({
             color,
+            emissive: new THREE.Color(0x0a0a14),
+            emissiveIntensity: 0.2,
             roughness: 0.9,
             metalness: 0.0,
             side: THREE.DoubleSide,

@@ -24,7 +24,8 @@
     "wait-on": "^8.0.3"
   },
   "dependencies": {
-    "electron-store": "^10.0.0"
+    "electron-store": "^10.0.0",
+    "electron-updater": "^6.3.9"
   },
   "build": {
     "extends": "./build/electron-builder.yml"

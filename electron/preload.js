@@ -41,8 +41,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // ─── File Operations ───────────────────────────────────
     exportFile: (options) => ipcRenderer.invoke('file:export', options),
+    openFile: () => ipcRenderer.invoke('file:open'),
+    saveScreenshot: (options) => ipcRenderer.invoke('file:screenshot', options),
     onFileOpen: (callback) => {
         ipcRenderer.on('file:open', (_event, data) => callback(data));
+    },
+    onFileOpened: (callback) => {
+        ipcRenderer.on('file:opened', (_event, data) => callback(data));
     },
 
     // ─── Sidecar Status ────────────────────────────────────
@@ -54,6 +59,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onUpdateAvailable: (callback) => {
         ipcRenderer.on('app:updateAvailable', (_event, data) => callback(data));
     },
+    onUpdateProgress: (callback) => {
+        ipcRenderer.on('update:progress', (_event, data) => callback(data));
+    },
+    onUpdateReady: (callback) => {
+        ipcRenderer.on('update:status', (_event, data) => {
+            if (data.status === 'ready') callback(data);
+        });
+    },
+    downloadUpdate: () => ipcRenderer.invoke('update:download'),
+    installUpdate: () => ipcRenderer.invoke('update:install'),
 
     // ─── Cleanup ───────────────────────────────────────────
     removeAllListeners: (channel) => {

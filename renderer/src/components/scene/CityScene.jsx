@@ -7,6 +7,8 @@ import { createAmenityGroup } from '../../three/amenityGeometry';
 import { DayNightCycle } from '../../three/dayNightCycle';
 import { VehicleAgents } from '../../three/vehicleAgents';
 import { PedestrianAgents } from '../../three/pedestrianAgents';
+import { HeatmapLayer } from '../../three/heatmapLayer';
+import { LODManager } from '../../three/lodManager';
 import { setRendererRef } from '../ui/ScreenshotExport';
 import { setCameraRefs, setCityBounds } from '../ui/CameraPresets';
 import useCityStore from '../../store/cityStore';
@@ -28,6 +30,8 @@ export default function CityScene() {
     const dayNightRef = useRef(null);
     const vehiclesRef = useRef(null);
     const pedsRef = useRef(null);
+    const heatmapRef = useRef(null);
+    const lodRef = useRef(null);
 
     const raycasterRef = useRef(new THREE.Raycaster());
     const mouseRef = useRef(new THREE.Vector2());
@@ -164,6 +168,11 @@ export default function CityScene() {
                 pedsRef.current.update(dt, speed);
             }
 
+            // LOD update (throttled internally)
+            if (lodRef.current) {
+                lodRef.current.update(camera, dt);
+            }
+
             // Push time-of-day to store every 30 frames
             frameCount++;
             if (frameCount % 30 === 0 && dayNightRef.current) {
@@ -241,6 +250,8 @@ export default function CityScene() {
         }
         if (vehiclesRef.current) vehiclesRef.current.dispose();
         if (pedsRef.current) pedsRef.current.dispose();
+        if (heatmapRef.current) heatmapRef.current.dispose();
+        if (lodRef.current) lodRef.current.dispose();
 
         const features = cityData.features;
         if (features.length === 0) return;
@@ -306,6 +317,18 @@ export default function CityScene() {
             pedestrians: peds.getCount(),
         });
 
+        // Heatmap layer
+        const heatmap = new HeatmapLayer();
+        heatmap.build(features, box);
+        heatmap.setVisible(false); // hidden by default, toggled via LayerToggles
+        scene.add(heatmap.group);
+        heatmapRef.current = heatmap;
+
+        // LOD manager for building performance
+        const lod = new LODManager();
+        lod.register(buildings);
+        lodRef.current = lod;
+
     }, [cityData, setAgentCounts]);
 
     // Layer visibility
@@ -318,6 +341,7 @@ export default function CityScene() {
         if (b) b.visible = layers.buildings;
         if (r) r.visible = layers.roads;
         if (a) a.visible = layers.amenities;
+        if (heatmapRef.current) heatmapRef.current.setVisible(!!layers.heatmap);
     }, [layers]);
 
     function disposeGroup(group) {

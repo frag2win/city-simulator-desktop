@@ -1,4 +1,4 @@
-const { getSidecarPort, getSidecarToken } = require('../sidecar/spawnPython');
+const { getSidecarPort } = require('../sidecar/spawnPython');
 const { logger } = require('../utils/logger');
 
 /**
@@ -9,7 +9,6 @@ function registerSimulationHandlers(ipcMain) {
     // simulation:start — Tell sidecar to begin simulation
     ipcMain.handle('simulation:start', async (_event, config) => {
         const port = getSidecarPort();
-        const token = getSidecarToken();
 
         if (!port) {
             return { error: true, message: 'Python sidecar is not running' };
@@ -29,7 +28,6 @@ function registerSimulationHandlers(ipcMain) {
     // simulation:event — Forward user-triggered events (road closure, power outage)
     ipcMain.handle('simulation:event', async (_event, eventData) => {
         const port = getSidecarPort();
-        const token = getSidecarToken();
 
         if (!port) {
             return { error: true, message: 'Python sidecar is not running' };

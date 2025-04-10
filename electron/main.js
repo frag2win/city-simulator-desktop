@@ -5,6 +5,7 @@ const { registerCityHandlers } = require('./ipc/cityHandlers');
 const { registerSimulationHandlers } = require('./ipc/simulationHandlers');
 const { registerFileHandlers } = require('./ipc/fileHandlers');
 const { buildAppMenu } = require('./menu/appMenu');
+const { initAutoUpdater, registerUpdateHandlers } = require('./utils/autoUpdater');
 const { logger } = require('./utils/logger');
 
 let mainWindow = null;
@@ -64,9 +65,15 @@ function createWindow() {
   registerCityHandlers(ipcMain);
   registerSimulationHandlers(ipcMain);
   registerFileHandlers(ipcMain, mainWindow);
+  registerUpdateHandlers(ipcMain);
 
   // Build native app menu
   buildAppMenu(mainWindow);
+
+  // Initialize auto-updater (only works in packaged builds)
+  if (!isDev) {
+    initAutoUpdater(mainWindow);
+  }
 
   return mainWindow;
 }

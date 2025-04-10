@@ -9,6 +9,7 @@ import LayerToggles from '../ui/LayerToggles';
 import SimulationControls from '../ui/SimulationControls';
 import ScreenshotExport from '../ui/ScreenshotExport';
 import CameraPresets from '../ui/CameraPresets';
+import UpdateNotice from '../ui/UpdateNotice';
 import useCityStore from '../../store/cityStore';
 
 const ipc = window.electronAPI;
@@ -21,7 +22,7 @@ const ipc = window.electronAPI;
 export default function AppShell() {
     const [sidecarStatus, setSidecarStatus] = useState('starting');
     const [sidecarPort, setSidecarPort] = useState(null);
-    const { cityData, showSearch, setShowSearch, setShowCacheManager } = useCityStore();
+    const { cityData, showSearch, setShowSearch, setShowCacheManager, exportCity, openCityFile } = useCityStore();
 
     useEffect(() => {
         if (ipc?.onSidecarStatus) {
@@ -44,8 +45,26 @@ export default function AppShell() {
 
         const timer = setTimeout(checkSidecar, 2000);
         const retryTimer = setTimeout(checkSidecar, 5000);
+
+        // Listen for .city file opened from OS file association
+        if (ipc?.onFileOpened) {
+            ipc.onFileOpened((data) => {
+                if (data?.data) {
+                    useCityStore.getState().setCityData(data.data);
+                    if (data.cityName) {
+                        useCityStore.setState({ cityName: data.cityName });
+                    }
+                }
+            });
+        }
+
+        // Listen for menu-triggered export/open
+        if (ipc?.onFileOpen) {
+            ipc.onFileOpen(() => openCityFile());
+        }
+
         return () => { clearTimeout(timer); clearTimeout(retryTimer); };
-    }, []);
+    }, [openCityFile]);
 
     const featureCount = cityData?.features?.length || 0;
     const metadata = cityData?.metadata || {};
@@ -72,8 +91,18 @@ export default function AppShell() {
                                 <LayerToggles />
                                 <div className="hud__divider" />
                                 <ScreenshotExport />
+                                <button className="hud__btn" onClick={() => exportCity('geojson')} title="Export as GeoJSON (Ctrl+E)">
+                                    📤
+                                </button>
+                                <button className="hud__btn" onClick={() => exportCity('city')} title="Save as .city file (Ctrl+Shift+E)">
+                                    💿
+                                </button>
+                                <div className="hud__divider" />
                                 <button className="hud__btn" onClick={() => setShowSearch(true)} title="Load another city (Ctrl+L)">
                                     🔍
+                                </button>
+                                <button className="hud__btn" onClick={() => openCityFile()} title="Open file">
+                                    📂
                                 </button>
                                 <button className="hud__btn" onClick={() => setShowCacheManager(true)} title="Cache manager">
                                     💾
@@ -103,6 +132,9 @@ export default function AppShell() {
                                 <button className="viewport__action-btn" onClick={() => setShowSearch(true)}>
                                     Load a City
                                 </button>
+                                <button className="viewport__action-btn viewport__action-btn--secondary" onClick={() => openCityFile()}>
+                                    Open File
+                                </button>
                                 <button className="viewport__action-btn viewport__action-btn--secondary" onClick={() => setShowCacheManager(true)}>
                                     View Cache
                                 </button>
@@ -122,6 +154,9 @@ export default function AppShell() {
             <ProgressModal />
             <CacheManager />
 
+            {/* Update notification banner */}
+            <UpdateNotice />
+
             <div className="statusbar">
                 <div className="statusbar__section">
                     <div className="statusbar__item">
@@ -140,7 +175,7 @@ export default function AppShell() {
                 </div>
                 <div className="statusbar__section">
                     <div className="statusbar__item">
-                        <span>v1.0.0</span>
+                        <span>v{__APP_VERSION__}</span>
                     </div>
                 </div>
             </div>

@@ -31,6 +31,14 @@ function buildAppMenu(mainWindow) {
             label: 'File',
             submenu: [
                 {
+                    label: 'Open File…',
+                    accelerator: isMac ? 'Cmd+O' : 'Ctrl+O',
+                    click: () => {
+                        mainWindow?.webContents.send('file:open');
+                    },
+                },
+                { type: 'separator' },
+                {
                     label: 'Export as GeoJSON',
                     accelerator: isMac ? 'Cmd+E' : 'Ctrl+E',
                     click: () => {
@@ -38,7 +46,7 @@ function buildAppMenu(mainWindow) {
                     },
                 },
                 {
-                    label: 'Export as .city File',
+                    label: 'Save as .city File',
                     accelerator: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
                     click: () => {
                         mainWindow?.webContents.send('menu:export', { format: 'city' });

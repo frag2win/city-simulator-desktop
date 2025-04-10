@@ -31,6 +31,13 @@ export default function LayerToggles() {
             >
                 📍
             </button>
+            <button
+                className={`layer-toggle ${layers.heatmap ? 'active' : ''}`}
+                onClick={() => toggleLayer('heatmap')}
+                title="Toggle density heatmap"
+            >
+                🌡️
+            </button>
         </div>
     );
 }

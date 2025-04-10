@@ -29,11 +29,18 @@ export const ipc = {
 
     // Files
     exportFile: (options) => api?.exportFile(options),
+    openFile: () => api?.openFile(),
+    saveScreenshot: (options) => api?.saveScreenshot(options),
     onFileOpen: (cb) => api?.onFileOpen(cb),
+    onFileOpened: (cb) => api?.onFileOpened(cb),
 
     // Status
     onSidecarStatus: (cb) => api?.onSidecarStatus(cb),
     onUpdateAvailable: (cb) => api?.onUpdateAvailable(cb),
+    onUpdateProgress: (cb) => api?.onUpdateProgress(cb),
+    onUpdateReady: (cb) => api?.onUpdateReady(cb),
+    downloadUpdate: () => api?.downloadUpdate(),
+    installUpdate: () => api?.installUpdate(),
 
     // Cleanup
     removeAllListeners: (channel) => api?.removeAllListeners(channel),

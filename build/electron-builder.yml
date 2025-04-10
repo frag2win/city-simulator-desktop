@@ -20,6 +20,13 @@ extraResources:
       - "!.venv/**"
       - "!*.pyc"
 
+# Auto-update — publish to GitHub Releases
+publish:
+  provider: github
+  owner: shubham
+  repo: city-simulator-desktop
+  releaseType: release
+
 # Windows
 win:
   target:
@@ -40,8 +47,6 @@ mac:
       arch: [x64, arm64]
   icon: icons/icon.icns
   category: public.app-category.education
-  entitlements: entitlements.mac.plist
-  entitlementsInherit: entitlements.mac.plist
 
 dmg:
   title: City Simulator
