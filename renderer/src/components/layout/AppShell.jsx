@@ -1,25 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import TitleBar from './TitleBar';
+import CitySearchBar from '../ui/CitySearchBar';
+import ProgressModal from '../ui/ProgressModal';
+import CacheManager from '../ui/CacheManager';
+import useCityStore from '../../store/cityStore';
 
 const ipc = window.electronAPI;
 
 /**
  * AppShell — Root layout component.
  * Renders: TitleBar → Main Content Area → Status Bar
+ * Integrates: CitySearchBar, ProgressModal, CacheManager overlays
  */
 export default function AppShell() {
-    const [sidecarStatus, setSidecarStatus] = useState('starting'); // starting | ready | error
+    const [sidecarStatus, setSidecarStatus] = useState('starting');
     const [sidecarPort, setSidecarPort] = useState(null);
+    const { cityData, showSearch, setShowSearch, setShowCacheManager } = useCityStore();
 
     useEffect(() => {
-        // Listen for sidecar status updates from main process
         if (ipc?.onSidecarStatus) {
-            ipc.onSidecarStatus((data) => {
-                setSidecarStatus(data.status);
-            });
+            ipc.onSidecarStatus((data) => setSidecarStatus(data.status));
         }
 
-        // Check sidecar info on mount
         async function checkSidecar() {
             try {
                 if (ipc?.getSidecarInfo) {
@@ -34,15 +36,13 @@ export default function AppShell() {
             }
         }
 
-        // Poll briefly for sidecar readiness
         const timer = setTimeout(checkSidecar, 2000);
         const retryTimer = setTimeout(checkSidecar, 5000);
-
-        return () => {
-            clearTimeout(timer);
-            clearTimeout(retryTimer);
-        };
+        return () => { clearTimeout(timer); clearTimeout(retryTimer); };
     }, []);
+
+    const featureCount = cityData?.features?.length || 0;
+    const metadata = cityData?.metadata || {};
 
     return (
         <div className="app-shell">
@@ -50,21 +50,68 @@ export default function AppShell() {
 
             <div className="app-shell__content">
                 <div className="viewport">
-                    <div className="viewport__empty">
-                        <div className="viewport__icon">🏙️</div>
-                        <h1 className="viewport__heading">City Simulator</h1>
-                        <p className="viewport__subtext">
-                            Load a city to begin. Enter coordinates or search for a city name
-                            to generate a procedural 3D model from OpenStreetMap data.
-                        </p>
-                        <div className="viewport__hint">
-                            <span>Press</span>
-                            <kbd>Ctrl+L</kbd>
-                            <span>to load a city</span>
+                    {cityData ? (
+                        <div className="viewport__loaded">
+                            <div className="viewport__stats">
+                                <div className="viewport__stat">
+                                    <span className="viewport__stat-value">{metadata.buildings || 0}</span>
+                                    <span className="viewport__stat-label">Buildings</span>
+                                </div>
+                                <div className="viewport__stat">
+                                    <span className="viewport__stat-value">{metadata.roads || 0}</span>
+                                    <span className="viewport__stat-label">Roads</span>
+                                </div>
+                                <div className="viewport__stat">
+                                    <span className="viewport__stat-value">{metadata.amenities || 0}</span>
+                                    <span className="viewport__stat-label">Amenities</span>
+                                </div>
+                                <div className="viewport__stat">
+                                    <span className="viewport__stat-value">{featureCount}</span>
+                                    <span className="viewport__stat-label">Total</span>
+                                </div>
+                            </div>
+                            <p className="viewport__ready-msg">
+                                City data loaded — {featureCount} features ready for 3D rendering (Phase 3)
+                            </p>
+                            <div className="viewport__actions">
+                                <button className="viewport__action-btn" onClick={() => setShowSearch(true)}>
+                                    Load Another City
+                                </button>
+                                <button className="viewport__action-btn viewport__action-btn--secondary" onClick={() => setShowCacheManager(true)}>
+                                    Manage Cache
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="viewport__empty">
+                            <div className="viewport__icon">🏙️</div>
+                            <h1 className="viewport__heading">City Simulator</h1>
+                            <p className="viewport__subtext">
+                                Load a city to begin. Enter coordinates or search for a city name
+                                to generate a procedural 3D model from OpenStreetMap data.
+                            </p>
+                            <div className="viewport__actions">
+                                <button className="viewport__action-btn" onClick={() => setShowSearch(true)}>
+                                    Load a City
+                                </button>
+                                <button className="viewport__action-btn viewport__action-btn--secondary" onClick={() => setShowCacheManager(true)}>
+                                    View Cache
+                                </button>
+                            </div>
+                            <div className="viewport__hint">
+                                <span>Press</span>
+                                <kbd>Ctrl+L</kbd>
+                                <span>to search</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
+
+            {/* Overlays */}
+            <CitySearchBar />
+            <ProgressModal />
+            <CacheManager />
 
             <div className="statusbar">
                 <div className="statusbar__section">
@@ -74,6 +121,11 @@ export default function AppShell() {
                     {sidecarPort && (
                         <div className="statusbar__item">
                             <span>Port: {sidecarPort}</span>
+                        </div>
+                    )}
+                    {featureCount > 0 && (
+                        <div className="statusbar__item">
+                            <span>Features: {featureCount}</span>
                         </div>
                     )}
                 </div>
