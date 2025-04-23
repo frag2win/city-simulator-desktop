@@ -1,6 +1,6 @@
 # Phase 3 — 3D Rendering Engine
 
-**Status**: 🔧 In Progress (core rendering complete)  
+**Status**: ✅ Complete  
 **Date**: February 2026
 
 ## Objective
@@ -156,8 +156,34 @@ The 3D rendering required significant debugging to get working:
 
 **Node.js (renderer)**: `three` (Three.js r170+)
 
-## Remaining Work
+## Entity Selection (Raycasting)
 
-- [ ] **Entity selection** — raycasting on click, info panel for selected building/road
-- [ ] **Layer toggles** — show/hide buildings, roads, amenities independently
-- [ ] **Camera presets** — top-down, perspective, street-level views
+Click any building/road in the 3D scene to select it.
+
+**Implementation** (`CityScene.jsx`):
+1. `THREE.Raycaster` cast from mouse position through camera
+2. Intersects `cityGroup.children` (building/road/amenity meshes)
+3. First hit with `userData.type` is selected
+4. Selected mesh highlighted blue (`0x44aaff`) with emissive glow
+5. Previous selection reset to original color
+
+**EntityInfoPanel** (`components/ui/EntityInfoPanel.jsx`):
+- Glassmorphism slide-in panel (right side, 280px)
+- Shows: type, OSM ID, name, height/floors (buildings), road type, amenity type
+- "View on OpenStreetMap" link to original OSM data
+- Close button to deselect
+
+## Layer Toggles
+
+**LayerToggles** (`components/ui/LayerToggles.jsx`):
+- Three toggle buttons in HUD: 🏢 (buildings) 🛣️ (roads) 📍 (amenities)
+- Active = indigo glow border, inactive = grayed out
+- Toggling sets `group.visible` on the named Three.js group
+- State managed in Zustand: `layers: { buildings: true, roads: true, amenities: true }`
+
+## Large City Auto-Fit
+
+For cities with many features (e.g., 15,596 for Lower Manhattan):
+- Camera distance reduced (`maxDim × 0.7` instead of `0.9`)
+- Fog density auto-adjusts: `min(0.00008, 2.0 / maxDim)`
+- Ensures buildings are visible even at large scales

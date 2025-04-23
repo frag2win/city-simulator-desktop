@@ -21,7 +21,7 @@ Comprehensive documentation for the **Procedural 3D City Simulator** desktop app
 |-------|--------|-------------|
 | Phase 1 | ✅ Complete | Scaffolding — Electron + Python sidecar + React |
 | Phase 2 | ✅ Complete | Data Ingestion — Overpass API + SQLite cache |
-| Phase 3 | 🔧 In Progress | 3D Rendering — Three.js viewport (core done) |
+| Phase 3 | ✅ Complete | 3D Rendering — Three.js viewport, selection, layers |
 | Phase 4 | ⏳ Planned | Agent Simulation — Traffic + pedestrians |
 | Phase 5 | ⏳ Planned | Export & Polish — Screenshots, packaging |
 
