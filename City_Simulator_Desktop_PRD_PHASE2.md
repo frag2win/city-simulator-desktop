@@ -35,8 +35,9 @@
 17. [Non-Goals](#17-non-goals)
 18. [Completion Criteria](#18-completion-criteria)
 19. [Layer Dependency Map](#19-layer-dependency-map)
-20. [Strategic "Do Not" Guidelines](#20-strategic-do-not-guidelines)
-21. [Final Definition](#21-final-definition)
+20. [Implementation Phases](#20-implementation-phases)
+21. [Strategic "Do Not" Guidelines](#21-strategic-do-not-guidelines)
+22. [Final Definition](#22-final-definition)
 
 ---
 
@@ -1026,11 +1027,39 @@ Layer I — Terrain
 
 ---
 
-## 20. Strategic "Do Not" Guidelines (Architectural Guardrails)
+## 20. Implementation Phases
+
+To ensure architectural stability, the v2.0 expansion will be executed sequentially layer by layer.
+
+### Phase 2: Layer II — Hydrology (Immediate Priority)
+- **Data:** Parse `natural=water`, `waterway=*`, and `natural=coastline`
+- **Render:** Earcut polygon lakes/oceans and dynamically extrude line ribbons for rivers
+- **UI:** Toggleable "Hydrology" layer state
+
+### Phase 3: Layer III Expansion
+- **Data:** Railways, Aviation, Maritime port boundaries, Zoning/Landuse overlays
+- **Render:** Flat plane overlays for zoning, runway polygons, instanced tracks
+- **Goal:** Complete the entire human-built surface envelope
+
+### Phase 4: Layer IV — Vegetation
+- **Data:** Parse `natural=wood`, `landuse=grass`, `leisure=park`
+- **Render:** Flat field polygons and LOD-gated low-poly instanced trees
+
+### Phase 5: Layer V & VI — Subsurface & Overlays
+- **Data:** Tunnels, Pipelines, Live AQI/Wind API fetch
+- **Render:** X-Ray mode terrain transparency; volumetric 3D weather vectors
+
+### Phase 6: Layer VII & VIII — Simulation & Temporal
+- **Data:** A* graphs, OSM historical datasets
+- **Render:** Dynamic pathfinding agents, closure/outage propagation cascades, timeline scrubber
+
+---
+
+## 21. Strategic "Do Not" Guidelines (Architectural Guardrails)
 
 To preserve system clarity, performance, and long-term scalability, the following constraints are mandatory and non-negotiable.
 
-### 20.1 Data Discipline
+### 21.1 Data Discipline
 
 - Do **NOT** integrate proprietary or legally restricted datasets (e.g., Google imagery, commercial map tiles, HERE data, Maxar).
 - Do **NOT** mix raster satellite imagery into the core structural rendering layer.
@@ -1068,7 +1097,7 @@ To preserve system clarity, performance, and long-term scalability, the followin
 - Do **NOT** fake missing data with arbitrary placeholder geometry — use documented null and default states.
 - Do **NOT** use photorealistic textures as a substitute for structural geometric accuracy.
 
-### 20.6 Performance Discipline
+### 21.6 Performance Discipline
 
 - Do **NOT** instantiate thousands of individual meshes when `InstancedMesh` is applicable.
 - Do **NOT** allow memory leaks between tile loads — always call `dispose()` on unloaded geometry and materials.
@@ -1076,7 +1105,7 @@ To preserve system clarity, performance, and long-term scalability, the followin
 - Do **NOT** block the renderer process with synchronous data operations.
 - Do **NOT** exceed the 500 draw call budget per frame without explicit profiling justification.
 
-### 20.7 Scope Protection
+### 21.7 Scope Protection
 
 - Do **NOT** expand into demographic, economic, or social simulation before Layer I–III structural completeness is verified.
 - Do **NOT** add features that do not map directly to one of the eight defined layers.
@@ -1089,7 +1118,7 @@ These guardrails ensure the Structural Earth Simulation Engine remains a precise
 
 ---
 
-## 21. Final Definition
+## 22. Final Definition
 
 The **Structural Earth Simulation Engine** is a layered, vector-based digital model of Earth — representing terrain, hydrology, human-built infrastructure, vegetation, subsurface systems, and environmental conditions — with topological correctness, semantic metadata preservation, consequence-bearing simulation, and temporal navigation across historical states.
 
