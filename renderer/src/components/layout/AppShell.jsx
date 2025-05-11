@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TitleBar from './TitleBar';
+import CityScene from '../scene/CityScene';
 import CitySearchBar from '../ui/CitySearchBar';
 import ProgressModal from '../ui/ProgressModal';
 import CacheManager from '../ui/CacheManager';
@@ -9,7 +10,7 @@ const ipc = window.electronAPI;
 
 /**
  * AppShell — Root layout component.
- * Renders: TitleBar → Main Content Area → Status Bar
+ * Renders: TitleBar → 3D Viewport / Empty State → Status Bar
  * Integrates: CitySearchBar, ProgressModal, CacheManager overlays
  */
 export default function AppShell() {
@@ -49,40 +50,31 @@ export default function AppShell() {
             <TitleBar sidecarStatus={sidecarStatus} />
 
             <div className="app-shell__content">
-                <div className="viewport">
-                    {cityData ? (
-                        <div className="viewport__loaded">
-                            <div className="viewport__stats">
-                                <div className="viewport__stat">
-                                    <span className="viewport__stat-value">{metadata.buildings || 0}</span>
-                                    <span className="viewport__stat-label">Buildings</span>
-                                </div>
-                                <div className="viewport__stat">
-                                    <span className="viewport__stat-value">{metadata.roads || 0}</span>
-                                    <span className="viewport__stat-label">Roads</span>
-                                </div>
-                                <div className="viewport__stat">
-                                    <span className="viewport__stat-value">{metadata.amenities || 0}</span>
-                                    <span className="viewport__stat-label">Amenities</span>
-                                </div>
-                                <div className="viewport__stat">
-                                    <span className="viewport__stat-value">{featureCount}</span>
-                                    <span className="viewport__stat-label">Total</span>
-                                </div>
+                {cityData ? (
+                    <div className="viewport viewport--3d">
+                        {/* 3D Scene fills the viewport */}
+                        <CityScene />
+
+                        {/* HUD overlay on top of 3D scene */}
+                        <div className="hud">
+                            <div className="hud__stats">
+                                <div className="hud__stat">{metadata.buildings || 0} buildings</div>
+                                <div className="hud__stat">{metadata.roads || 0} roads</div>
+                                <div className="hud__stat">{metadata.amenities || 0} amenities</div>
+                                <div className="hud__stat hud__stat--total">{featureCount} total</div>
                             </div>
-                            <p className="viewport__ready-msg">
-                                City data loaded — {featureCount} features ready for 3D rendering (Phase 3)
-                            </p>
-                            <div className="viewport__actions">
-                                <button className="viewport__action-btn" onClick={() => setShowSearch(true)}>
-                                    Load Another City
+                            <div className="hud__actions">
+                                <button className="hud__btn" onClick={() => setShowSearch(true)} title="Load another city (Ctrl+L)">
+                                    🔍
                                 </button>
-                                <button className="viewport__action-btn viewport__action-btn--secondary" onClick={() => setShowCacheManager(true)}>
-                                    Manage Cache
+                                <button className="hud__btn" onClick={() => setShowCacheManager(true)} title="Cache manager">
+                                    💾
                                 </button>
                             </div>
                         </div>
-                    ) : (
+                    </div>
+                ) : (
+                    <div className="viewport">
                         <div className="viewport__empty">
                             <div className="viewport__icon">🏙️</div>
                             <h1 className="viewport__heading">City Simulator</h1>
@@ -104,8 +96,8 @@ export default function AppShell() {
                                 <span>to search</span>
                             </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* Overlays */}
