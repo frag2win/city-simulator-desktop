@@ -16,9 +16,11 @@ function registerCityHandlers(ipcMain) {
         }
 
         try {
-            logger.info('Loading city data', { bbox });
-            const response = await fetch(`http://127.0.0.1:${port}/city?bbox=${encodeURIComponent(bbox)}`, {
+            logger.info('Loading city data', { bbox, port });
+            const url = `http://127.0.0.1:${port}/city?bbox=${encodeURIComponent(bbox)}`;
+            const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` },
+                signal: AbortSignal.timeout(90000), // 90s timeout (Overpass can take 60s)
             });
 
             if (!response.ok) {
@@ -32,8 +34,16 @@ function registerCityHandlers(ipcMain) {
             logger.info('City data loaded', { featureCount: geojson.features?.length || 0 });
             return { error: false, data: geojson };
         } catch (err) {
-            logger.error('City load failed', { error: err.message });
-            return { error: true, message: err.message };
+            logger.error('City load failed', { error: err.message, name: err.name });
+
+            // Provide user-friendly error messages
+            if (err.name === 'TimeoutError') {
+                return { error: true, message: 'Request timed out — the area may be too large. Try a smaller area.' };
+            }
+            if (err.message.includes('ECONNREFUSED')) {
+                return { error: true, message: 'Cannot connect to the engine. It may have crashed — try restarting the app.' };
+            }
+            return { error: true, message: err.message || 'Unknown error loading city' };
         }
     });
 
