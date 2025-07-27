@@ -272,7 +272,7 @@ export default function CityScene() {
             new THREE.MeshPhongMaterial({ color: 0x0c0c16 })
         );
         ground.rotation.x = -Math.PI / 2;
-        ground.position.y = -6;            // just below terrain offset (-5) so wireframe sits above
+        ground.position.y = -1;            // just below terrain peaks (0) so wireframe sits above
         ground.receiveShadow = true;
         ground.name = 'ground';
         scene.add(ground);

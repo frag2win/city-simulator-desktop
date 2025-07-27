@@ -27,7 +27,6 @@ const SOLID_COLOR = 0x030a14;   // dark under-surface
 // ── Constants ───────────────────────────────────────────────────────
 const EARTH_R = 6378137;        // Earth radius for Mercator projection
 const MAX_VERT = 80;            // max scene-units of vertical relief
-const TERRAIN_Y_OFFSET = -5;    // push terrain below building ground plane
 
 /**
  * Build a terrain group from the elevation API response and the city
@@ -45,12 +44,6 @@ export function createTerrainGroup(terrainData, cityBbox) {
     const originLat = (south + north) / 2;
     const cosLat = Math.cos(originLat * Math.PI / 180);
 
-    // Full extent of the bbox in local metres (same projection as buildings/roads)
-    const totalWidth = (east - west) * (Math.PI / 180) * EARTH_R * cosLat;
-    const totalDepth = (north - south) * (Math.PI / 180) * EARTH_R;
-    const halfW = totalWidth / 2;
-    const halfD = totalDepth / 2;
-
     const elevRange = maxElev - minElev;
 
     // Adaptive vertical exaggeration → flat cities (< 20 m Δ) get amplified,
@@ -64,6 +57,12 @@ export function createTerrainGroup(terrainData, cityBbox) {
         ? Math.min(rawExag, MAX_VERT / elevRange)
         : rawExag;
 
+    // Find the elevation at the origin (center of the grid)
+    // The grid is row 0=south to resolution-1=north, col 0=west to resolution-1=east
+    // Center is approximately at resolution/2
+    const centerIdx = Math.floor(resolution / 2);
+    const originElev = grid[centerIdx]?.[centerIdx] ?? minElev;
+
     // Actual vertical extent in scene units.
     const peakHeight = elevRange * exaggeration;
 
@@ -74,16 +73,25 @@ export function createTerrainGroup(terrainData, cityBbox) {
 
     for (let row = 0; row < resolution; row++) {
         const latFrac = row / (resolution - 1);       // 0 = south, 1 = north
-        const z = halfD - latFrac * totalDepth;        // south = +Z, north = −Z
+        const lat = south + latFrac * (north - south);
+
+        // Exact same projection as Python spatial_processor.py
+        // Note: Python returns y (north) extending positive, Three.js Z (north) extends negative.
+        // spatial_processor.py: y = (lat - origin_lat) * (pi/180) * R
+        // In Three.js space, Z = -y
+        const z = -((lat - originLat) * (Math.PI / 180) * EARTH_R);
 
         for (let col = 0; col < resolution; col++) {
             const lonFrac = col / (resolution - 1);    // 0 = west, 1 = east
-            const x = -halfW + lonFrac * totalWidth;
+            const lon = west + lonFrac * (east - west);
+
+            // spatial_processor.py: x = (lon - origin_lon) * (pi/180) * R * cos(origin_lat)
+            const x = (lon - originLon) * (Math.PI / 180) * EARTH_R * cosLat;
 
             const rawElev = grid[row]?.[col] ?? 0;
-            // y is relative to maxElev: peaks → 0, valleys → negative.
-            // This keeps the terrain surface just below the building ground plane.
-            const y = (rawElev - maxElev) * exaggeration;
+            // y is relative to originElev: origin → 0, peaks → positive, valleys → negative.
+            // This aligns the terrain exactly with the building geometry which sits at y=0.
+            const y = (rawElev - originElev) * exaggeration;
 
             verts.push(x, y, z);
 
@@ -158,11 +166,6 @@ export function createTerrainGroup(terrainData, cityBbox) {
         glowMesh.renderOrder = 1;
         group.add(glowMesh);
     }
-
-    // ── Position: peaks are at y=0 from the vertex formula; we push the
-    // whole group slightly below the building ground plane so depth tests
-    // keep buildings in front of the wireframe.
-    group.position.y = TERRAIN_Y_OFFSET;
 
     return group;
 }
