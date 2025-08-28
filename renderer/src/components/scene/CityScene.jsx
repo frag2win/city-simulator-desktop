@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createBuildingGroup } from '../../three/buildingGeometry';
@@ -20,7 +20,6 @@ export default function CityScene() {
     const cityGroupRef = useRef(null);
 
     const { cityData } = useCityStore();
-    const [debugInfo, setDebugInfo] = useState('');
 
     // Initialize Three.js scene
     const initScene = useCallback(() => {
@@ -32,11 +31,11 @@ export default function CityScene() {
 
         // Scene
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0a0f);
-        scene.fog = new THREE.FogExp2(0x0a0a0f, 0.00003);
+        scene.background = new THREE.Color(0x080810);
+        scene.fog = new THREE.FogExp2(0x080810, 0.00004);
         sceneRef.current = scene;
 
-        // Camera — far clipping at 100k to handle large cities
+        // Camera
         const camera = new THREE.PerspectiveCamera(50, width / height, 0.5, 100000);
         camera.position.set(500, 600, 500);
         camera.lookAt(0, 0, 0);
@@ -51,9 +50,9 @@ export default function CityScene() {
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.type = THREE.PCFShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.4;
+        renderer.toneMappingExposure = 1.3;
         container.appendChild(renderer.domElement);
         rendererRef.current = renderer;
 
@@ -74,8 +73,8 @@ export default function CityScene() {
         // Ground plane
         setupGround(scene);
 
-        // Grid helper
-        const grid = new THREE.GridHelper(6000, 120, 0x1a1a2e, 0x14141e);
+        // Grid
+        const grid = new THREE.GridHelper(8000, 160, 0x161625, 0x101018);
         grid.position.y = 0.05;
         scene.add(grid);
 
@@ -109,43 +108,47 @@ export default function CityScene() {
         };
     }, []);
 
-    // Setup lights
+    // Lights — cinematic blue-tinted cityscape lighting
     function setupLights(scene) {
-        // Strong ambient for visibility
-        const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+        // Ambient — cool blue base
+        const ambient = new THREE.AmbientLight(0x8899bb, 0.6);
         scene.add(ambient);
 
-        // Hemisphere light
-        const hemi = new THREE.HemisphereLight(0x87ceeb, 0x444444, 0.5);
+        // Hemisphere — sky/ground
+        const hemi = new THREE.HemisphereLight(0x7799cc, 0x222233, 0.5);
         scene.add(hemi);
 
-        // Main directional (sun)
-        const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
-        sun.position.set(500, 1200, 500);
+        // Main directional (warm sun from upper-right)
+        const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+        sun.position.set(600, 1200, 400);
         sun.castShadow = true;
         sun.shadow.mapSize.width = 2048;
         sun.shadow.mapSize.height = 2048;
         sun.shadow.camera.near = 10;
-        sun.shadow.camera.far = 4000;
-        sun.shadow.camera.left = -2000;
-        sun.shadow.camera.right = 2000;
-        sun.shadow.camera.top = 2000;
-        sun.shadow.camera.bottom = -2000;
+        sun.shadow.camera.far = 5000;
+        sun.shadow.camera.left = -3000;
+        sun.shadow.camera.right = 3000;
+        sun.shadow.camera.top = 3000;
+        sun.shadow.camera.bottom = -3000;
         sun.shadow.bias = -0.0005;
         scene.add(sun);
 
-        // Fill light
-        const fill = new THREE.DirectionalLight(0x8899bb, 0.4);
-        fill.position.set(-400, 600, -400);
+        // Cool fill from opposite side
+        const fill = new THREE.DirectionalLight(0x6688aa, 0.4);
+        fill.position.set(-500, 600, -500);
         scene.add(fill);
+
+        // Subtle rim light from behind
+        const rim = new THREE.DirectionalLight(0x4455aa, 0.2);
+        rim.position.set(0, 400, -800);
+        scene.add(rim);
     }
 
-    // Ground plane
+    // Ground
     function setupGround(scene) {
         const groundGeom = new THREE.PlaneGeometry(20000, 20000);
-        const groundMat = new THREE.MeshStandardMaterial({
-            color: 0x111118,
-            roughness: 1,
+        const groundMat = new THREE.MeshPhongMaterial({
+            color: 0x0c0c16,
         });
         const ground = new THREE.Mesh(groundGeom, groundMat);
         ground.rotation.x = -Math.PI / 2;
@@ -171,51 +174,36 @@ export default function CityScene() {
         const features = cityData.features;
         if (features.length === 0) return;
 
-        console.log(`[CityScene] Loading ${features.length} features...`);
-
         // Create city group
         const cityGroup = new THREE.Group();
         cityGroup.name = 'city';
 
-        // Add buildings
+        // Build geometry layers
         const buildings = createBuildingGroup(features);
         cityGroup.add(buildings);
 
-        // Add roads
         const roads = createRoadGroup(features);
         cityGroup.add(roads);
 
-        // Add amenities
         const amenities = createAmenityGroup(features);
         cityGroup.add(amenities);
 
         scene.add(cityGroup);
         cityGroupRef.current = cityGroup;
 
-        // Add axes helper at city center for visual orientation
+        // Auto-fit camera to city bounds
         const box = new THREE.Box3().setFromObject(cityGroup);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-
-        const axes = new THREE.AxesHelper(200);
-        axes.position.copy(center);
-        scene.add(axes);
-
-        const info = `B:${buildings.children.length} R:${roads.children.length} A:${amenities.children.length}\n` +
-            `Size: ${size.x.toFixed(0)}×${size.y.toFixed(0)}×${size.z.toFixed(0)}\n` +
-            `Center: ${center.x.toFixed(0)},${center.y.toFixed(0)},${center.z.toFixed(0)}`;
-        setDebugInfo(info);
-        console.log('[CityScene]', info);
-
-        if (!box.isEmpty() && isFinite(size.x)) {
+        if (!box.isEmpty() && isFinite(box.min.x)) {
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.z, 200);
-            const dist = maxDim * 1.0;
+            const dist = maxDim * 0.9;
 
             if (cameraRef.current && controlsRef.current) {
                 cameraRef.current.position.set(
-                    center.x + dist * 0.6,
-                    dist * 0.5,
-                    center.z + dist * 0.6
+                    center.x + dist * 0.5,
+                    dist * 0.45,
+                    center.z + dist * 0.5
                 );
                 controlsRef.current.target.set(center.x, 0, center.z);
                 controlsRef.current.update();
@@ -245,36 +233,15 @@ export default function CityScene() {
     }, [initScene]);
 
     return (
-        <>
-            <div
-                ref={containerRef}
-                className="city-scene"
-                style={{
-                    width: '100%',
-                    height: '100%',
-                    position: 'absolute',
-                    inset: 0,
-                }}
-            />
-            {debugInfo && (
-                <pre style={{
-                    position: 'absolute',
-                    bottom: '40px',
-                    left: '12px',
-                    background: 'rgba(0,0,0,0.85)',
-                    color: '#0f0',
-                    padding: '8px 12px',
-                    zIndex: 100,
-                    fontSize: '11px',
-                    fontFamily: 'monospace',
-                    pointerEvents: 'none',
-                    borderRadius: '4px',
-                    border: '1px solid #0f03',
-                    whiteSpace: 'pre',
-                }}>
-                    {debugInfo}
-                </pre>
-            )}
-        </>
+        <div
+            ref={containerRef}
+            className="city-scene"
+            style={{
+                width: '100%',
+                height: '100%',
+                position: 'absolute',
+                inset: 0,
+            }}
+        />
     );
 }
