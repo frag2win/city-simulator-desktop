@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import useCityStore from '../../store/cityStore';
-import { BuildingIcon, RoadIcon, PinIcon, TerrainIcon, HeatmapIcon } from './Icons';
+import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon } from './Icons';
 
 export default function LayerToggles() {
     const { layers, toggleLayer } = useCityStore();
@@ -32,13 +32,7 @@ export default function LayerToggles() {
             >
                 <PinIcon />
             </button>
-            <button
-                className={`layer-toggle ${layers.terrain ? 'active' : ''}`}
-                onClick={() => toggleLayer('terrain')}
-                title="Toggle terrain"
-            >
-                <TerrainIcon />
-            </button>
+
             <button
                 className={`layer-toggle ${layers.heatmap ? 'active' : ''}`}
                 onClick={() => toggleLayer('heatmap')}

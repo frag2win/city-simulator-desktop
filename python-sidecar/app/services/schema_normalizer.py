@@ -63,17 +63,21 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
     # Step 2: Convert to GeoJSON features
     features = []
     for i, el in enumerate(ways):
-        feature = _convert_element(el, nodes)
-        if feature:
-            features.append(feature)
+        feature_or_list = _convert_element(el, nodes)
+        if feature_or_list:
+            if isinstance(feature_or_list, list):
+                features.extend(feature_or_list)
+            else:
+                features.append(feature_or_list)
 
-    # Deduplicate by OSM ID
+    # Deduplicate by OSM ID (while grouping segments)
     seen_ids = set()
     unique_features = []
     for f in features:
-        osm_id = f["properties"]["osm_id"]
-        if osm_id not in seen_ids:
-            seen_ids.add(osm_id)
+        # if a road was split, we append "_seg0", etc. so osm_id acts as group identifier
+        unique_id = f["properties"].get("_unique_id", f["properties"]["osm_id"])
+        if unique_id not in seen_ids:
+            seen_ids.add(unique_id)
             unique_features.append(f)
 
     logger.info(f"Normalized {len(unique_features)} features ({len(features) - len(unique_features)} duplicates removed)")
@@ -120,31 +124,66 @@ def _convert_element(el: dict, nodes: dict) -> Optional[dict]:
         }
     elif el_type == "way":
         node_refs = el.get("nodes", [])
-        coords = []
-        for nid in node_refs:
-            if nid in nodes:
-                coords.append(list(nodes[nid]))
-
-        if len(coords) < 2:
-            return None
-
-        # Closed way = polygon (building, landuse, water)
         is_closed = len(node_refs) > 2 and node_refs[0] == node_refs[-1]
 
         if is_closed and category in ("building", "landuse", "water"):
+            coords = []
+            for nid in node_refs:
+                if nid in nodes:
+                    coords.append(list(nodes[nid]))
+            if len(coords) < 3:
+                return None
             geometry = {
                 "type": "Polygon",
                 "coordinates": [coords],
             }
         else:
-            geometry = {
-                "type": "LineString",
-                "coordinates": coords,
-            }
+            # Roads and open paths -> split them if nodes are missing
+            segments = []
+            current_seg = []
+            for nid in node_refs:
+                if nid in nodes:
+                    current_seg.append(list(nodes[nid]))
+                else:
+                    if len(current_seg) >= 2:
+                        segments.append(current_seg)
+                    current_seg = []
+            if len(current_seg) >= 2:
+                segments.append(current_seg)
+
+            if not segments:
+                return None
+
+            properties = _normalize_properties(osm_id, category, tags)
+
+            if len(segments) == 1:
+                return {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": segments[0],
+                    },
+                    "properties": properties,
+                }
+            else:
+                # Return multiple contiguous features
+                multi_features = []
+                for idx, seg in enumerate(segments):
+                    seg_props = dict(properties)
+                    seg_props["_unique_id"] = f"{osm_id}_seg{idx}"
+                    multi_features.append({
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": seg,
+                        },
+                        "properties": seg_props,
+                    })
+                return multi_features
     else:
         return None
 
-    # Build normalized properties
+    # Build normalized properties for polygons and points
     properties = _normalize_properties(osm_id, category, tags)
 
     return {

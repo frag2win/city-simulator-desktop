@@ -34,12 +34,8 @@ const useCityStore = create((set, get) => ({
         buildings: true,
         roads: true,
         amenities: true,
-        terrain: true,
         heatmap: false,
     },
-
-    // ─── Terrain ─────────────────────────────
-    terrainData: null,
 
     // ─── Simulation ──────────────────────────
     isPlaying: true,
@@ -160,38 +156,7 @@ const useCityStore = create((set, get) => ({
         }
     },
 
-    /**
-     * Load terrain elevation grid via IPC → sidecar.
-     */
-    loadTerrain: async (bbox) => {
-        try {
-            const api = window.electronAPI;
-            if (!api?.loadTerrain) {
-                console.warn('[Store] loadTerrain: electronAPI.loadTerrain not available');
-                return;
-            }
-            // Calculate dynamic resolution based on city area extent
-            const [west, south, east, north] = bbox;
-            const originLat = (south + north) / 2;
-            const cosLat = Math.cos(originLat * Math.PI / 180);
-            const EARTH_R = 6378137;
-            const widthM = (east - west) * (Math.PI / 180) * EARTH_R * cosLat;
-            const depthM = (north - south) * (Math.PI / 180) * EARTH_R;
-            const maxDim = Math.max(widthM, depthM);
-            
-            // Aim for 1 terrain vertex every ~40 meters.
-            // Cap between 32x32 (small regions) and 128x128 (massive macro-cities)
-            let dynamicRes = Math.floor(maxDim / 40);
-            dynamicRes = Math.max(32, Math.min(dynamicRes, 128));
 
-            const result = await api.loadTerrain(bbox, dynamicRes);
-            if (result && !result.error && result.data) {
-                set({ terrainData: result.data });
-            }
-        } catch (err) {
-            console.warn('[Store] loadTerrain failed:', err.message);
-        }
-    },
 
     /**
      * Export current city data as GeoJSON or .city file.

@@ -101,35 +101,6 @@ function registerCityHandlers(ipcMain) {
         }
     });
 
-    // terrain:load — Fetch elevation grid for terrain rendering
-    ipcMain.handle('terrain:load', async (_event, { bbox, resolution }) => {
-        try {
-            return await fetchWithRetry(async (port, token) => {
-                const res = resolution || 48;
-                logger.info('Loading terrain data', { bbox, resolution: res, port });
-                const url = `http://127.0.0.1:${port}/terrain?bbox=${encodeURIComponent(bbox)}&resolution=${res}`;
-                const response = await fetch(url, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    signal: AbortSignal.timeout(120000),
-                });
-
-                if (!response.ok) {
-                    const body = await response.json().catch(() => ({}));
-                    const detail = body.detail || `Engine returned error ${response.status}`;
-                    logger.error('Terrain load failed', { status: response.status, detail });
-                    return { error: true, message: detail };
-                }
-
-                const data = await response.json();
-                logger.info('Terrain data loaded', { resolution: data.resolution, minElev: data.min_elevation, maxElev: data.max_elevation });
-                return { error: false, data };
-            }, 'terrain:load');
-        } catch (err) {
-            logger.error('Terrain load failed after retries', { error: err.message });
-            return { error: true, message: err.message || 'Unknown error loading terrain' };
-        }
-    });
-
     // city:cache:delete — Delete a cached city
     ipcMain.handle('city:cache:delete', async (_event, { cacheId }) => {
         try {
