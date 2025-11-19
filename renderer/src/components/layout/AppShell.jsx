@@ -7,6 +7,8 @@ import CacheManager from '../ui/CacheManager';
 import EntityInfoPanel from '../ui/EntityInfoPanel';
 import LayerToggles from '../ui/LayerToggles';
 import SimulationControls from '../ui/SimulationControls';
+import ScreenshotExport from '../ui/ScreenshotExport';
+import CameraPresets from '../ui/CameraPresets';
 import useCityStore from '../../store/cityStore';
 
 const ipc = window.electronAPI;
@@ -69,6 +71,7 @@ export default function AppShell() {
                             <div className="hud__actions">
                                 <LayerToggles />
                                 <div className="hud__divider" />
+                                <ScreenshotExport />
                                 <button className="hud__btn" onClick={() => setShowSearch(true)} title="Load another city (Ctrl+L)">
                                     🔍
                                 </button>
@@ -80,6 +83,9 @@ export default function AppShell() {
 
                         {/* Simulation controls — bottom-left */}
                         <SimulationControls />
+
+                        {/* Camera presets — bottom-right */}
+                        <CameraPresets />
 
                         {/* Entity info panel (right side) */}
                         <EntityInfoPanel />

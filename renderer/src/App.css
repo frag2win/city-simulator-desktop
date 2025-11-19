@@ -1105,3 +1105,60 @@ body {
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
+
+/* ──────────────────────────────────────────────
+   Camera Presets — bottom-right
+   ────────────────────────────────────────────── */
+
+.camera-presets {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
+  background: rgba(18, 18, 26, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  z-index: 15;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.camera-preset__btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.camera-preset__btn:hover {
+  background: var(--accent-glow);
+  border-color: var(--accent-primary);
+  transform: scale(1.1);
+}
+
+/* ──────────────────────────────────────────────
+   Screenshot Flash
+   ────────────────────────────────────────────── */
+
+.hud__btn--flash {
+  animation: screenshotFlash 0.6s ease-out;
+}
+
+@keyframes screenshotFlash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.5);
+  }
+
+  30% {
+    box-shadow: 0 0 20px 10px rgba(255, 255, 255, 0.3);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}

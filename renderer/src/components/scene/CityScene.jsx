@@ -7,6 +7,8 @@ import { createAmenityGroup } from '../../three/amenityGeometry';
 import { DayNightCycle } from '../../three/dayNightCycle';
 import { VehicleAgents } from '../../three/vehicleAgents';
 import { PedestrianAgents } from '../../three/pedestrianAgents';
+import { setRendererRef } from '../ui/ScreenshotExport';
+import { setCameraRefs, setCityBounds } from '../ui/CameraPresets';
 import useCityStore from '../../store/cityStore';
 
 /**
@@ -65,6 +67,7 @@ export default function CityScene() {
             antialias: true,
             alpha: false,
             powerPreference: 'high-performance',
+            preserveDrawingBuffer: true, // required for screenshots
         });
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -74,6 +77,9 @@ export default function CityScene() {
         renderer.toneMappingExposure = 1.3;
         container.appendChild(renderer.domElement);
         rendererRef.current = renderer;
+
+        // Expose for screenshot capture
+        setRendererRef(renderer, scene, camera);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -277,6 +283,10 @@ export default function CityScene() {
                 );
                 controlsRef.current.target.set(center.x, 0, center.z);
                 controlsRef.current.update();
+
+                // Set camera presets refs
+                setCameraRefs(cameraRef.current, controlsRef.current);
+                setCityBounds(center, dist);
             }
         }
 
