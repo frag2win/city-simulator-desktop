@@ -14,7 +14,7 @@ const HEALTH_CHECK_INTERVAL = 5000; // 5 seconds
 const STARTUP_TIMEOUT = 15000;      // 15 seconds (up from 10s for slow machines)
 let healthCheckTimer = null;
 let consecutiveHealthFailures = 0;
-const MAX_HEALTH_FAILURES = 3;
+const MAX_HEALTH_FAILURES = 12;     // 12 × 5s = 60s tolerance for long Overpass queries
 
 /**
  * Generate a one-time auth token for the sidecar session.

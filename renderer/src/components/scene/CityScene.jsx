@@ -292,11 +292,12 @@ export default function CityScene() {
         scene.add(ground);
     }
 
-    // Load city data + spawn agents
+    // Load city data + spawn agents (async chunked to avoid freezing UI)
     useEffect(() => {
         if (!sceneReady || !sceneRef.current || !cityData?.features) return;
 
         const scene = sceneRef.current;
+        let cancelled = false;
 
         // Dispose previous
         if (cityGroupRef.current) {
@@ -311,154 +312,177 @@ export default function CityScene() {
         const features = cityData.features;
         if (features.length === 0) return;
 
-        const cityGroup = new THREE.Group();
-        cityGroup.name = 'city';
+        // Yield to browser to allow repaint between heavy geometry passes
+        const yieldFrame = () => new Promise(resolve => setTimeout(resolve, 0));
 
-        const buildings = createBuildingGroup(features);
-        buildings.name = 'buildings';
-        cityGroup.add(buildings);
+        const buildCity = async () => {
+            const cityGroup = new THREE.Group();
+            cityGroup.name = 'city';
 
-        const roads = createRoadGroup(features);
-        roads.name = 'roads';
-        cityGroup.add(roads);
+            console.log(`[CityScene] Building geometry for ${features.length} features…`);
 
-        const water = createWaterGroup(features);
-        water.name = 'water';
-        cityGroup.add(water);
+            // Pass 1: Buildings (heaviest)
+            const buildings = createBuildingGroup(features);
+            buildings.name = 'buildings';
+            cityGroup.add(buildings);
+            if (cancelled) return;
+            await yieldFrame();
 
-        const zones = createZoneGroup(features);
-        zones.name = 'zones';
-        cityGroup.add(zones);
+            // Pass 2: Roads
+            const roads = createRoadGroup(features);
+            roads.name = 'roads';
+            cityGroup.add(roads);
+            if (cancelled) return;
+            await yieldFrame();
 
-        const railways = createRailGroup(features);
-        railways.name = 'railways';
-        cityGroup.add(railways);
+            // Pass 3: Water
+            const water = createWaterGroup(features);
+            water.name = 'water';
+            cityGroup.add(water);
+            if (cancelled) return;
+            await yieldFrame();
 
-        const amenities = createAmenityGroup(features);
-        amenities.name = 'amenities';
-        cityGroup.add(amenities);
+            // Pass 4: Zones
+            const zones = createZoneGroup(features);
+            zones.name = 'zones';
+            cityGroup.add(zones);
+            if (cancelled) return;
+            await yieldFrame();
 
-        scene.add(cityGroup);
-        cityGroupRef.current = cityGroup;
+            // Pass 5: Railways
+            const railways = createRailGroup(features);
+            railways.name = 'railways';
+            cityGroup.add(railways);
+            if (cancelled) return;
+            await yieldFrame();
 
-        const isBoxValid = (b) =>
-            !b.isEmpty() &&
-            isFinite(b.min.x) && isFinite(b.min.y) && isFinite(b.min.z) &&
-            isFinite(b.max.x) && isFinite(b.max.y) && isFinite(b.max.z);
+            // Pass 6: Amenities
+            const amenities = createAmenityGroup(features);
+            amenities.name = 'amenities';
+            cityGroup.add(amenities);
+            if (cancelled) return;
+            await yieldFrame();
 
-        // Auto-fit camera — Focus on human-built structures (buildings + roads)
-        // to avoid snapping the camera far out to cover massive water bodies.
-        let box = new THREE.Box3();
-        box.setFromObject(buildings);
+            scene.add(cityGroup);
+            cityGroupRef.current = cityGroup;
 
-        const roadBox = new THREE.Box3().setFromObject(roads);
-        if (isBoxValid(roadBox)) {
-            box.union(roadBox);
-        }
+            const isBoxValid = (b) =>
+                !b.isEmpty() &&
+                isFinite(b.min.x) && isFinite(b.min.y) && isFinite(b.min.z) &&
+                isFinite(b.max.x) && isFinite(b.max.y) && isFinite(b.max.z);
 
-        // Fallback to entire city group if built structures alone are invalid
-        if (!isBoxValid(box)) {
-            box.setFromObject(cityGroup);
-        }
+            // Auto-fit camera
+            let box = new THREE.Box3();
+            box.setFromObject(buildings);
 
-        // If STILL invalid, fallback to roads only
-        if (!isBoxValid(box)) {
-            console.warn('[CityScene] Bounding box invalid, falling back to roads-only bbox');
-            box = new THREE.Box3().setFromObject(roads);
-        }
+            const roadBox = new THREE.Box3().setFromObject(roads);
+            if (isBoxValid(roadBox)) {
+                box.union(roadBox);
+            }
 
-        // Last resort: compute bbox manually from feature coordinates
-        if (!isBoxValid(box)) {
-            console.warn('[CityScene] Roads bbox also invalid, computing from raw feature coords');
-            let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
-            for (const f of features) {
-                const coords = f.geometry?.coordinates;
-                if (!coords) continue;
-                const flat = f.geometry.type === 'Point' ? [coords]
-                    : f.geometry.type === 'LineString' ? coords
-                        : f.geometry.type === 'Polygon' ? coords[0] : [];
-                for (const pt of flat) {
-                    if (Array.isArray(pt) && isFinite(pt[0]) && isFinite(pt[1])) {
-                        if (pt[0] < mnX) mnX = pt[0];
-                        if (pt[0] > mxX) mxX = pt[0];
-                        if (-pt[1] < mnZ) mnZ = -pt[1];
-                        if (-pt[1] > mxZ) mxZ = -pt[1];
+            if (!isBoxValid(box)) {
+                box.setFromObject(cityGroup);
+            }
+
+            if (!isBoxValid(box)) {
+                console.warn('[CityScene] Bounding box invalid, falling back to roads-only bbox');
+                box = new THREE.Box3().setFromObject(roads);
+            }
+
+            if (!isBoxValid(box)) {
+                console.warn('[CityScene] Roads bbox also invalid, computing from raw feature coords');
+                let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
+                for (const f of features) {
+                    const coords = f.geometry?.coordinates;
+                    if (!coords) continue;
+                    const flat = f.geometry.type === 'Point' ? [coords]
+                        : f.geometry.type === 'LineString' ? coords
+                            : f.geometry.type === 'Polygon' ? coords[0] : [];
+                    for (const pt of flat) {
+                        if (Array.isArray(pt) && isFinite(pt[0]) && isFinite(pt[1])) {
+                            if (pt[0] < mnX) mnX = pt[0];
+                            if (pt[0] > mxX) mxX = pt[0];
+                            if (-pt[1] < mnZ) mnZ = -pt[1];
+                            if (-pt[1] > mxZ) mxZ = -pt[1];
+                        }
                     }
                 }
-            }
-            if (isFinite(mnX) && isFinite(mxX)) {
-                box.min.set(mnX, 0, mnZ);
-                box.max.set(mxX, 50, mxZ);
-            }
-        }
-
-        if (isBoxValid(box)) {
-            const size = box.getSize(new THREE.Vector3());
-            const center = box.getCenter(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.z, 200);
-            const dist = maxDim * 0.7;
-            if (scene.fog) {
-                scene.fog.density = Math.min(0.00008, 2.0 / maxDim);
+                if (isFinite(mnX) && isFinite(mxX)) {
+                    box.min.set(mnX, 0, mnZ);
+                    box.max.set(mxX, 50, mxZ);
+                }
             }
 
-            if (cameraRef.current && controlsRef.current) {
-                cameraRef.current.position.set(
-                    center.x + dist * 0.4,
-                    dist * 0.35,
-                    center.z + dist * 0.4
-                );
-                controlsRef.current.target.set(center.x, 0, center.z);
-                controlsRef.current.update();
+            if (isBoxValid(box)) {
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.z, 200);
+                const dist = maxDim * 0.7;
+                if (scene.fog) {
+                    scene.fog.density = Math.min(0.00008, 2.0 / maxDim);
+                }
 
-                // Set camera presets refs
-                setCameraRefs(cameraRef.current, controlsRef.current);
-                setCityBounds(center, dist);
+                if (cameraRef.current && controlsRef.current) {
+                    cameraRef.current.position.set(
+                        center.x + dist * 0.4,
+                        dist * 0.35,
+                        center.z + dist * 0.4
+                    );
+                    controlsRef.current.target.set(center.x, 0, center.z);
+                    controlsRef.current.update();
+
+                    setCameraRefs(cameraRef.current, controlsRef.current);
+                    setCityBounds(center, dist);
+                }
+
+                const oldGrid = scene.getObjectByName('dynamic-grid');
+                if (oldGrid) scene.remove(oldGrid);
+
+                const gridDim = Math.ceil(maxDim / 100) * 100;
+                const divisions = Math.floor(gridDim / 50);
+                const grid = new THREE.GridHelper(gridDim, divisions, 0x161625, 0x101018);
+                grid.name = 'dynamic-grid';
+                grid.position.set(center.x, 0.05, center.z);
+                scene.add(grid);
+
+            } else {
+                console.error('[CityScene] Could not compute valid bounding box — camera not repositioned');
             }
 
-            // Remove old dynamic grid if any
-            const oldGrid = scene.getObjectByName('dynamic-grid');
-            if (oldGrid) scene.remove(oldGrid);
+            // Initialize simulation systems
+            dayNightRef.current = new DayNightCycle(scene);
 
-            // Construct perfectly fitted grid
-            // Round to nearest 100 meters to ensure grid lines aren't densely packed
-            const gridDim = Math.ceil(maxDim / 100) * 100;
-            const divisions = Math.floor(gridDim / 50); // 50m squares
-            const grid = new THREE.GridHelper(gridDim, divisions, 0x161625, 0x101018);
-            grid.name = 'dynamic-grid';
-            grid.position.set(center.x, 0.05, center.z);
-            scene.add(grid);
+            const vehicles = new VehicleAgents(scene);
+            vehicles.init(features);
+            vehiclesRef.current = vehicles;
 
-        } else {
-            console.error('[CityScene] Could not compute valid bounding box — camera not repositioned');
-        }
+            const peds = new PedestrianAgents(scene);
+            peds.init(features);
+            pedsRef.current = peds;
 
-        // Initialize simulation systems
-        dayNightRef.current = new DayNightCycle(scene);
+            setAgentCounts({
+                vehicles: vehicles.getCount(),
+                pedestrians: peds.getCount(),
+            });
 
-        const vehicles = new VehicleAgents(scene);
-        vehicles.init(features);
-        vehiclesRef.current = vehicles;
+            // Heatmap layer
+            const heatmap = new HeatmapLayer();
+            heatmap.build(features, box);
+            heatmap.setVisible(false);
+            scene.add(heatmap.group);
+            heatmapRef.current = heatmap;
 
-        const peds = new PedestrianAgents(scene);
-        peds.init(features);
-        pedsRef.current = peds;
+            // LOD manager
+            const lod = new LODManager();
+            lod.register(buildings);
+            lodRef.current = lod;
 
-        setAgentCounts({
-            vehicles: vehicles.getCount(),
-            pedestrians: peds.getCount(),
-        });
+            console.log('[CityScene] City construction complete');
+        };
 
-        // Heatmap layer
-        const heatmap = new HeatmapLayer();
-        heatmap.build(features, box);
-        heatmap.setVisible(false); // hidden by default, toggled via LayerToggles
-        scene.add(heatmap.group);
-        heatmapRef.current = heatmap;
+        buildCity().catch(err => console.error('[CityScene] Build failed:', err));
 
-        // LOD manager for building performance
-        const lod = new LODManager();
-        lod.register(buildings);
-        lodRef.current = lod;
+        return () => { cancelled = true; };
 
     }, [cityData, sceneReady, setAgentCounts]);
 

@@ -108,7 +108,8 @@ async def query_overpass(
                 )
 
             if response.status_code == 200:
-                data = response.json()
+                # Deserialize in thread pool — large payloads can block the event loop
+                data = await asyncio.to_thread(response.json)
                 element_count = len(data.get("elements", []))
                 logger.info(f"Overpass returned {element_count} elements")
 

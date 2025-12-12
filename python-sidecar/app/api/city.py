@@ -2,7 +2,9 @@
 City API endpoints — data ingestion, caching, and management.
 """
 import asyncio
+import json
 from fastapi import APIRouter, Header, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import Response
 from typing import Optional
 from app.core.logger import logger
 from app.services.overpass_client import query_overpass, OverpassError
@@ -65,7 +67,9 @@ async def load_city(
     cached = await get_cached_city(cache_key)
     if cached:
         logger.info(f"Serving city from cache: {cache_key}")
-        return cached
+        # Serialize in thread pool — 110k features can take 10s+ to json.dumps
+        json_bytes = await asyncio.to_thread(json.dumps, cached)
+        return Response(content=json_bytes, media_type="application/json")
 
     # Query Overpass
     try:
@@ -82,8 +86,8 @@ async def load_city(
             detail="No data found for this area. It may be ocean, uninhabited, or outside OpenStreetMap coverage."
         )
 
-    # Normalize
-    geojson = normalize_overpass_response(raw_data)
+    # Normalize (CPU-bound, run in thread pool to avoid blocking ASGI event loop)
+    geojson = await asyncio.to_thread(normalize_overpass_response, raw_data)
 
     if not geojson.get("features"):
         raise HTTPException(
@@ -91,11 +95,11 @@ async def load_city(
             detail="No recognizable features (buildings, roads) found in this area."
         )
 
-    # Project to local Cartesian
+    # Project to local Cartesian (CPU-bound)
     center_lon, center_lat = compute_bbox_center(
         bbox_obj.north, bbox_obj.south, bbox_obj.east, bbox_obj.west
     )
-    projected = project_geojson(geojson, center_lon, center_lat)
+    projected = await asyncio.to_thread(project_geojson, geojson, center_lon, center_lat)
 
     # Add bbox to response
     projected["bbox"] = [bbox_obj.west, bbox_obj.south, bbox_obj.east, bbox_obj.north]
@@ -104,7 +108,9 @@ async def load_city(
     city_name = f"City @ {bbox_obj.north:.4f},{bbox_obj.east:.4f}"
     await cache_city(cache_key, city_name, projected)
 
-    return projected
+    # Serialize in thread pool
+    json_bytes = await asyncio.to_thread(json.dumps, projected)
+    return Response(content=json_bytes, media_type="application/json")
 
 
 @router.get("/city/cache")

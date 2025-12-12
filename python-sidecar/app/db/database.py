@@ -86,7 +86,11 @@ async def get_cached_city(bbox: str) -> Optional[dict]:
         logger.info(f"Cache hit for bbox: {bbox} (age: {age_hours:.1f}h, {row['feature_count']} features)")
 
         try:
-            return json.loads(row["geojson"])
+            # json.loads on 100MB+ cached payloads can block the event loop for 15s+
+            # Run in thread pool to keep health checks responsive
+            import asyncio
+            geojson_str = row["geojson"]
+            return await asyncio.to_thread(json.loads, geojson_str)
         except json.JSONDecodeError:
             logger.error(f"Corrupted cache entry for bbox: {bbox}")
             await db.execute("DELETE FROM city_cache WHERE id = ?", (row["id"],))
