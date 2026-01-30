@@ -435,7 +435,11 @@ export default function CityScene() {
         }
 
         try {
-            const terrainGroup = createTerrainGroup(terrainData, bbox);
+            const origin = cityData.metadata?.origin || {
+                lon: (bbox[0] + bbox[2]) / 2,
+                lat: (bbox[1] + bbox[3]) / 2
+            };
+            const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
             scene.add(terrainGroup);
             terrainRef.current = terrainGroup;
         } catch (err) {

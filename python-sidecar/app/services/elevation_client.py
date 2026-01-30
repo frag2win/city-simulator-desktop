@@ -8,7 +8,7 @@ import httpx
 from app.core.logger import logger
 
 ELEVATION_URL = "https://api.open-meteo.com/v1/elevation"
-BATCH_SIZE = 100          # max points per API request (keeps URLs under 8 KB)
+BATCH_SIZE = 50           # max points per API request (lowered to 50 to prevent 400 URI Too Long errors)
 REQUEST_DELAY_S = 0.05    # polite pause between batches
 
 
@@ -50,6 +50,7 @@ async def fetch_elevation_grid(
     elevations: list[float] = []
 
     async with httpx.AsyncClient(timeout=30) as client:
+        last_valid_elevation = 0.0
         for batch_start in range(0, len(points), BATCH_SIZE):
             batch = points[batch_start : batch_start + BATCH_SIZE]
             lat_csv = ",".join(f"{p[0]:.6f}" for p in batch)
@@ -63,20 +64,23 @@ async def fetch_elevation_grid(
                 if resp.status_code == 200:
                     data = resp.json()
                     batch_elevs = data.get("elevation", [])
-                    # Replace None / NaN with 0
-                    elevations.extend(
-                        e if (e is not None and e == e) else 0.0
-                        for e in batch_elevs
-                    )
+                    # Replace None / NaN with the last known valid elevation or 0
+                    for e in batch_elevs:
+                        if e is not None and e == e:
+                            last_valid_elevation = e
+                            elevations.append(e)
+                        else:
+                            elevations.append(last_valid_elevation)
                 else:
                     logger.warning(
                         f"Open-Meteo returned {resp.status_code} for batch "
                         f"{batch_start}–{batch_start + len(batch)}"
                     )
-                    elevations.extend([0.0] * len(batch))
+                    # Interpolate using last known value instead of dropping a massive 0.0 hole
+                    elevations.extend([last_valid_elevation] * len(batch))
             except Exception as exc:
                 logger.warning(f"Elevation batch failed: {exc}")
-                elevations.extend([0.0] * len(batch))
+                elevations.extend([last_valid_elevation] * len(batch))
 
             # Polite delay between batches
             if batch_start + BATCH_SIZE < len(points):

@@ -34,14 +34,15 @@ const MAX_VERT = 80;            // max scene-units of vertical relief
  *
  * @param {object} terrainData   – { grid, resolution, min_elevation, max_elevation }
  * @param {number[]} cityBbox    – [west, south, east, north]  (WGS-84)
+ * @param {object} origin        – { lon, lat } (origin from cityData metadata)
  * @returns {THREE.Group}        – ready to add to the scene
  */
-export function createTerrainGroup(terrainData, cityBbox) {
+export function createTerrainGroup(terrainData, cityBbox, origin) {
     const { grid, resolution, min_elevation: minElev, max_elevation: maxElev } = terrainData;
     const [west, south, east, north] = cityBbox;
 
-    const originLon = (west + east) / 2;
-    const originLat = (south + north) / 2;
+    const originLon = origin.lon;
+    const originLat = origin.lat;
     const cosLat = Math.cos(originLat * Math.PI / 180);
 
     const elevRange = maxElev - minElev;
