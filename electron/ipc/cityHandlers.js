@@ -2,7 +2,7 @@ const { getSidecarPort, getSidecarToken, spawnSidecar } = require('../sidecar/sp
 const { logger } = require('../utils/logger');
 
 const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 1500;
+const RETRY_DELAY_MS = 1501;
 
 /**
  * Fetch helper with retry + auto-restart of sidecar on ECONNREFUSED.
