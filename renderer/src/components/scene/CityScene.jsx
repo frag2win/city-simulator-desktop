@@ -24,7 +24,7 @@ export default function CityScene() {
     const controlsRef = useRef(null);
     const animationRef = useRef(null);
     const cityGroupRef = useRef(null);
-    const clockRef = useRef(new THREE.Clock());
+    const lastTimeRef = useRef(performance.now());
 
     // Simulation refs
     const dayNightRef = useRef(null);
@@ -151,7 +151,9 @@ export default function CityScene() {
         let frameCount = 0;
         const animate = () => {
             animationRef.current = requestAnimationFrame(animate);
-            const dt = clockRef.current.getDelta();
+            const now = performance.now();
+            const dt = Math.min((now - lastTimeRef.current) / 1000, 0.1); // cap at 100ms
+            lastTimeRef.current = now;
             const store = storeRef.current;
             const speed = store.isPlaying ? store.simSpeed : 0;
 
@@ -184,7 +186,7 @@ export default function CityScene() {
 
             renderer.render(scene, camera);
         };
-        clockRef.current.start();
+        lastTimeRef.current = performance.now();
         animate();
 
         return () => {
@@ -274,13 +276,47 @@ export default function CityScene() {
         scene.add(cityGroup);
         cityGroupRef.current = cityGroup;
 
-        // Auto-fit camera
-        const box = new THREE.Box3().setFromObject(cityGroup);
-        if (!box.isEmpty() && isFinite(box.min.x)) {
+        // Auto-fit camera — try full city group first, fallback to roads-only
+        let box = new THREE.Box3().setFromObject(cityGroup);
+
+        // If the full bbox is invalid (NaN from bad geometry), try roads only
+        if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.x)) {
+            console.warn('[CityScene] Full bounding box invalid, falling back to roads-only bbox');
+            box = new THREE.Box3().setFromObject(roads);
+        }
+
+        // Last resort: compute bbox manually from feature coordinates
+        if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.x)) {
+            console.warn('[CityScene] Roads bbox also invalid, computing from raw feature coords');
+            let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
+            for (const f of features) {
+                const coords = f.geometry?.coordinates;
+                if (!coords) continue;
+                const flat = f.geometry.type === 'Point' ? [coords]
+                    : f.geometry.type === 'LineString' ? coords
+                    : f.geometry.type === 'Polygon' ? coords[0] : [];
+                for (const pt of flat) {
+                    if (Array.isArray(pt) && isFinite(pt[0]) && isFinite(pt[1])) {
+                        if (pt[0] < mnX) mnX = pt[0];
+                        if (pt[0] > mxX) mxX = pt[0];
+                        if (-pt[1] < mnZ) mnZ = -pt[1];
+                        if (-pt[1] > mxZ) mxZ = -pt[1];
+                    }
+                }
+            }
+            if (isFinite(mnX) && isFinite(mxX)) {
+                box.min.set(mnX, 0, mnZ);
+                box.max.set(mxX, 50, mxZ);
+            }
+        }
+
+        if (!box.isEmpty() && isFinite(box.min.x) && isFinite(box.max.x)) {
             const size = box.getSize(new THREE.Vector3());
             const center = box.getCenter(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.z, 200);
             const dist = maxDim * 0.7;
+
+            console.log(`[CityScene] Camera auto-fit: center=(${center.x.toFixed(0)}, ${center.z.toFixed(0)}), maxDim=${maxDim.toFixed(0)}, dist=${dist.toFixed(0)}`);
 
             if (scene.fog) {
                 scene.fog.density = Math.min(0.00008, 2.0 / maxDim);
@@ -299,6 +335,8 @@ export default function CityScene() {
                 setCameraRefs(cameraRef.current, controlsRef.current);
                 setCityBounds(center, dist);
             }
+        } else {
+            console.error('[CityScene] Could not compute valid bounding box — camera not repositioned');
         }
 
         // Initialize simulation systems

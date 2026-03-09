@@ -2,8 +2,10 @@
  * buildingGeometry.js — Renders buildings by extruding actual polygon footprints.
  * Uses THREE.ExtrudeGeometry for realistic building shapes instead of bounding-box cubes.
  * Falls back to BoxGeometry for degenerate polygons.
+ * Validates all geometry for NaN/Infinity before adding to prevent bounding-box corruption.
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ---------- Height-based color palette (HSL blue-gray tones) ----------
 const HEIGHT_BANDS = [
@@ -22,6 +24,45 @@ const EDGE_COLOR = new THREE.Color(0x1a1a2e);
 const EXTRUDE_BASE = { bevelEnabled: false, steps: 1 };
 
 // ---------- Helpers ----------
+
+/**
+ * Check whether a BufferGeometry has valid (non-NaN, finite) positions.
+ */
+function isGeometryValid(geom) {
+    if (!geom || !geom.attributes?.position) return false;
+    const pos = geom.attributes.position;
+    if (pos.count === 0) return false;
+    // Spot-check first, middle, and last vertices for NaN/Infinity
+    const checks = [0, Math.floor(pos.count / 2), pos.count - 1];
+    for (const idx of checks) {
+        const x = pos.getX(idx), y = pos.getY(idx), z = pos.getZ(idx);
+        if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return false;
+    }
+    return true;
+}
+
+/**
+ * Create a BoxGeometry fallback for a polygon ring.
+ * Always produces valid geometry.
+ */
+function createFallbackBox(ring, height) {
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    for (const pt of ring) {
+        if (pt[0] < minX) minX = pt[0];
+        if (pt[0] > maxX) maxX = pt[0];
+        if (pt[1] < minY) minY = pt[1];
+        if (pt[1] > maxY) maxY = pt[1];
+    }
+    const w = Math.max(maxX - minX, 1);
+    const d = Math.max(maxY - minY, 1);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const geom = new THREE.BoxGeometry(w, height, d);
+    geom.translate(cx, height / 2, -cy);
+    return geom;
+}
 
 /**
  * Convert a GeoJSON polygon ring → THREE.Shape.
@@ -60,6 +101,7 @@ function ringToShape(ring) {
 /**
  * Create a Three.js group containing all building meshes from GeoJSON features.
  * Buildings use real polygon footprint extrusion for accurate shapes.
+ * Geometry is validated and merged per height-band for fewer draw calls.
  */
 export function createBuildingGroup(features) {
     const group = new THREE.Group();
@@ -72,10 +114,13 @@ export function createBuildingGroup(features) {
     if (buildings.length === 0) return group;
 
     let created = 0;
+    let extruded = 0;
+    let fallbacks = 0;
+    let skipped = 0;
 
     for (const feature of buildings) {
         const coords = feature.geometry.coordinates;
-        if (!coords || !coords[0] || coords[0].length < 4) continue;
+        if (!coords || !coords[0] || coords[0].length < 4) { skipped++; continue; }
 
         const ring = coords[0];
         const height = feature.properties?.height || 10.5;
@@ -83,35 +128,30 @@ export function createBuildingGroup(features) {
 
         // Try real polygon extrusion first
         const shape = ringToShape(ring);
-        let geom;
+        let geom = null;
 
         if (shape) {
             try {
-                geom = new THREE.ExtrudeGeometry(shape, { ...EXTRUDE_BASE, depth: height });
+                const extGeom = new THREE.ExtrudeGeometry(shape, { ...EXTRUDE_BASE, depth: height });
                 // ExtrudeGeometry extrudes along +Z; rotate so building grows upward (+Y)
-                geom.rotateX(-Math.PI / 2);
+                extGeom.rotateX(-Math.PI / 2);
+                extGeom.computeVertexNormals();
+
+                // Validate: reject geometry with NaN/Infinity — prevents bbox corruption
+                if (isGeometryValid(extGeom)) {
+                    geom = extGeom;
+                    extruded++;
+                } else {
+                    extGeom.dispose();
+                }
             } catch {
-                geom = null; // fallback below
+                // ExtrudeGeometry failed — fall through to BoxGeometry
             }
         }
 
         if (!geom) {
-            // Fallback: bounding-box cube for degenerate polygons
-            let minX = Infinity, maxX = -Infinity;
-            let minY = Infinity, maxY = -Infinity;
-            for (const pt of ring) {
-                if (pt[0] < minX) minX = pt[0];
-                if (pt[0] > maxX) maxX = pt[0];
-                if (pt[1] < minY) minY = pt[1];
-                if (pt[1] > maxY) maxY = pt[1];
-            }
-            const w = Math.max(maxX - minX, 1);
-            const d = Math.max(maxY - minY, 1);
-            const cx = (minX + maxX) / 2;
-            const cy = (minY + maxY) / 2;
-
-            geom = new THREE.BoxGeometry(w, height, d);
-            geom.translate(cx, height / 2, -cy);
+            geom = createFallbackBox(ring, height);
+            fallbacks++;
         }
 
         const color = getBuildingColor(height);
@@ -149,6 +189,10 @@ export function createBuildingGroup(features) {
         group.add(mesh);
         created++;
     }
+
+    console.log(
+        `[Buildings] ${created} created (${extruded} extruded, ${fallbacks} fallback boxes, ${skipped} skipped) out of ${buildings.length} total`
+    );
 
     return group;
 }

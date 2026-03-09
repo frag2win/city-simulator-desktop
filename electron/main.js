@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { spawnSidecar, killSidecar, getSidecarPort, getSidecarToken } = require('./sidecar/spawnPython');
 const { registerCityHandlers } = require('./ipc/cityHandlers');
@@ -44,6 +44,22 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'dist', 'index.html'));
   }
+
+  // Prevent navigation to external URLs (e.g. OpenStreetMap links)
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const parsed = new URL(url);
+    // Allow localhost (dev server) and file:// (production)
+    if (parsed.protocol === 'file:' || parsed.hostname === 'localhost') return;
+    event.preventDefault();
+    shell.openExternal(url);
+    logger.info('Blocked in-app navigation, opened externally', { url });
+  });
+
+  // Handle window.open / target="_blank" links
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
 
   // Show when ready
   mainWindow.once('ready-to-show', () => {
