@@ -60,10 +60,10 @@ export class DayNightCycle {
 
             if (elevation < 0.1) {
                 sunColor.lerpColors(SUN_COLORS.night, SUN_COLORS.dawn, elevation * 10);
-                this.sunLight.intensity = 0.1 + elevation * 5;
+                this.sunLight.intensity = 0.3 + elevation * 4;
             } else if (elevation < 0.5) {
                 sunColor.lerpColors(SUN_COLORS.dawn, SUN_COLORS.day, (elevation - 0.1) / 0.4);
-                this.sunLight.intensity = 0.6 + elevation * 1.2;
+                this.sunLight.intensity = 0.7 + elevation * 1.0;
             } else {
                 sunColor.copy(SUN_COLORS.day);
                 this.sunLight.intensity = 1.2;
@@ -74,11 +74,11 @@ export class DayNightCycle {
         // Ambient light — dimmer at night
         if (this.ambientLight) {
             const isNight = sunY < 0;
-            this.ambientLight.intensity = isNight ? 0.15 : 0.5 + Math.sin(angle) * 0.3;
+            this.ambientLight.intensity = isNight ? 0.35 : 0.5 + Math.sin(angle) * 0.3;
             this.ambientLight.color.setHSL(
-                isNight ? 0.65 : 0.58,
-                isNight ? 0.3 : 0.15,
-                isNight ? 0.15 : 0.6
+                isNight ? 0.62 : 0.58,
+                isNight ? 0.2 : 0.15,
+                isNight ? 0.35 : 0.6
             );
         }
 
