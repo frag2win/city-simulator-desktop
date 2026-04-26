@@ -104,6 +104,42 @@ export const ZoneIcon = (props) => (
     </Icon>
 );
 
+/** Vegetation — tree */
+export const TreeIcon = (props) => (
+    <Icon {...props}>
+        <path d="M12 2L7 9h3L6 16h4l-2 6h8l-2-6h4l-4-7h3z" />
+        <line x1="12" y1="22" x2="12" y2="16" />
+    </Icon>
+);
+
+/** Pipeline — tube/pipe */
+export const PipelineIcon = (props) => (
+    <Icon {...props}>
+        <path d="M4 8h16" />
+        <path d="M4 16h16" />
+        <path d="M2 5v14" />
+        <path d="M22 5v14" />
+    </Icon>
+);
+
+/** X-Ray Mode — grid/transparent */
+export const XRayIcon = (props) => (
+    <Icon {...props}>
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <line x1="3" y1="9" x2="21" y2="9" />
+        <line x1="3" y1="15" x2="21" y2="15" />
+        <line x1="9" y1="3" x2="9" y2="21" />
+        <line x1="15" y1="3" x2="15" y2="21" />
+    </Icon>
+);
+
+/** Environment (Wind/AQI) — cloud */
+export const CloudIcon = (props) => (
+    <Icon {...props}>
+        <path d="M17.5 19C19.985 19 22 16.985 22 14.5C22 12.15 20.2 10.22 17.9 10.03C17.38 7.18 14.92 5 12 5C9.08 5 6.62 7.18 6.1 10.03C3.8 10.22 2 12.15 2 14.5C2 16.985 4.015 19 6.5 19H17.5Z" />
+    </Icon>
+);
+
 // ─── Actions ────────────────────────────────────────────
 
 /** Screenshot — camera */
