@@ -134,8 +134,16 @@ function createRoadStripGeometry(feature) {
             const ny = dx / len * halfWidth;
 
             const idx = vertices.length / 3;
-            vertices.push(x + nx, 0.5, -(y + ny));
-            vertices.push(x - nx, 0.5, -(y - ny));
+            
+            // Adjust elevation based on layer/tunnel status
+            let elevation = 0.5;
+            if (feature.properties?.is_tunnel || (feature.properties?.layer && feature.properties.layer < 0)) {
+                const layerLevel = feature.properties?.layer || -1;
+                elevation = layerLevel * 8; // -8m per layer underground
+            }
+            
+            vertices.push(x + nx, elevation, -(y + ny));
+            vertices.push(x - nx, elevation, -(y - ny));
 
             if (idx >= 2) {
                 indices.push(idx - 2, idx - 1, idx);
