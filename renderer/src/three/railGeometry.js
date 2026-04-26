@@ -104,14 +104,21 @@ function createTrackGeometry(feature) {
             const nx = -dy / len;
             const ny = dx / len;
 
-            // 1. Ballast Ribbon (Z=0.2, elevated above ground but below road Z=0.5)
+            // Determine base elevation based on tunnel/layer
+            let baseElev = 0;
+            if (feature.properties?.is_tunnel || (feature.properties?.layer && feature.properties.layer < 0)) {
+                const layerLevel = feature.properties?.layer || -1;
+                baseElev = layerLevel * 8 - 0.5; // push underground
+            }
+
+            // 1. Ballast Ribbon
             const bxOff = nx * ballastHalfW;
             const byOff = ny * ballastHalfW;
 
             const bIdx = ballastVerts.length / 3;
             ballastVerts.push(
-                x + bxOff, 0.2, -(y + byOff),
-                x - bxOff, 0.2, -(y - byOff)
+                x + bxOff, baseElev + 0.2, -(y + byOff),
+                x - bxOff, baseElev + 0.2, -(y - byOff)
             );
 
             if (bIdx >= 2) {
@@ -119,7 +126,7 @@ function createTrackGeometry(feature) {
                 ballastIndices.push(bIdx - 1, bIdx + 1, bIdx);
             }
 
-            // 2. Dual Rails Ribbon (Z=0.4, sit right on top of the ballast)
+            // 2. Dual Rails Ribbon
             const rxRight = nx * GAUGE_OFFSET;
             const ryRight = ny * GAUGE_OFFSET;
 
@@ -142,10 +149,10 @@ function createTrackGeometry(feature) {
 
             // Push right rail (2 verts) then left rail (2 verts)
             railVerts.push(
-                x + rrxOut, 0.4, -(y + rryOut),
-                x + rrxIn, 0.4, -(y + rryIn),
-                x + rlxIn, 0.4, -(y + rlyIn),
-                x + rlxOut, 0.4, -(y + rlyOut)
+                x + rrxOut, baseElev + 0.4, -(y + rryOut),
+                x + rrxIn, baseElev + 0.4, -(y + rryIn),
+                x + rlxIn, baseElev + 0.4, -(y + rlyIn),
+                x + rlxOut, baseElev + 0.4, -(y + rlyOut)
             );
 
             if (rIdx >= 4) {
