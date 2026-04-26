@@ -94,6 +94,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
     landuse = sum(1 for f in unique_features if f["properties"]["osm_type"] == "landuse")
     railways = sum(1 for f in unique_features if f["properties"]["osm_type"] == "railway")
     amenities = sum(1 for f in unique_features if f["properties"]["osm_type"] == "amenity")
+    vegetation = sum(1 for f in unique_features if f["properties"]["osm_type"] == "vegetation")
 
     metadata = {
         "feature_count": len(unique_features),
@@ -102,6 +103,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
         "landuse": landuse,
         "railways": railways,
         "amenities": amenities,
+        "vegetation": vegetation,
     }
 
     logger.info(f"Feature breakdown: {metadata}")
@@ -134,7 +136,7 @@ def _convert_element(el: dict, nodes: dict, ways_dict: dict) -> Optional[dict]:
         node_refs = el.get("nodes", [])
         is_closed = len(node_refs) > 2 and node_refs[0] == node_refs[-1]
 
-        if is_closed and category in ("building", "landuse", "water"):
+        if is_closed and category in ("building", "landuse", "water", "vegetation"):
             coords = []
             for nid in node_refs:
                 if nid in nodes:
@@ -298,8 +300,17 @@ def _categorize(tags: dict) -> Optional[str]:
         return "railway"
     if "power" in tags:
         return "power"
+    if "man_made" in tags and tags["man_made"] == "pipeline":
+        return "pipeline"
     if "aeroway" in tags:
         return "aeroway"
+    # Vegetation (Phase 4) — must be checked BEFORE generic landuse
+    if "natural" in tags and tags["natural"] in ("wood", "scrub", "tree", "tree_row"):
+        return "vegetation"
+    if "landuse" in tags and tags["landuse"] in ("forest", "grass", "orchard", "meadow"):
+        return "vegetation"
+    if "leisure" in tags and tags["leisure"] in ("park", "garden"):
+        return "vegetation"
     if "landuse" in tags:
         return "landuse"
     if "natural" in tags and tags["natural"] in ("water", "coastline"):
@@ -418,6 +429,8 @@ def _normalize_properties(osm_id: int, category: str, tags: dict, el_type: str =
         "osm_type": category,
         "osm_element_type": el_type,
         "name": tags.get("name"),
+        "is_tunnel": tags.get("tunnel") in ("yes", "true", "1"),
+        "layer": _safe_int(tags.get("layer")) or 0,
         "tags": tags,
     }
 
@@ -455,6 +468,13 @@ def _normalize_properties(osm_id: int, category: str, tags: dict, el_type: str =
         props["power_type"] = tags.get("power")
         props["voltage"] = tags.get("voltage")
         
+    elif category == "pipeline":
+        props["substance"] = tags.get("substance", "unknown")
+        # Most pipelines are underground by default unless explicitly layer >= 0
+        if "layer" not in tags and "tunnel" not in tags:
+            props["is_tunnel"] = True
+            props["layer"] = -1
+        
     elif category == "aeroway":
         props["aeroway_type"] = tags.get("aeroway")
 
@@ -469,6 +489,18 @@ def _normalize_properties(osm_id: int, category: str, tags: dict, el_type: str =
     elif category == "amenity":
         props["amenity"] = tags.get("amenity")
         props["display_name"] = tags.get("name") or tags.get("amenity", "").replace("_", " ").title()
+
+    elif category == "vegetation":
+        # Determine the vegetation sub-type
+        veg_type = (
+            tags.get("natural")  # wood, scrub, tree, tree_row
+            or tags.get("landuse")  # forest, grass, orchard, meadow
+            or tags.get("leisure")  # park, garden
+            or "unknown"
+        )
+        props["vegetation_type"] = veg_type
+        props["leaf_type"] = tags.get("leaf_type")  # broadleaved, needleleaved, mixed
+        props["display_name"] = tags.get("name") or veg_type.replace("_", " ").title()
 
     return props
 
