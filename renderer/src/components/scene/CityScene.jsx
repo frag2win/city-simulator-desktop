@@ -7,6 +7,9 @@ import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
 import { createZoneGroup } from '../../three/zoneGeometry';
 import { createRailGroup } from '../../three/railGeometry';
+import { createVegetationGroup } from '../../three/vegetationGeometry';
+import { createPipelineGroup } from '../../three/pipelineGeometry';
+import { EnvironmentSimulation } from '../../three/environmentSimulation';
 import { DayNightCycle } from '../../three/dayNightCycle';
 import { VehicleAgents } from '../../three/vehicleAgents';
 import { PedestrianAgents } from '../../three/pedestrianAgents';
@@ -35,6 +38,7 @@ export default function CityScene() {
     const pedsRef = useRef(null);
     const heatmapRef = useRef(null);
     const lodRef = useRef(null);
+    const envSimRef = useRef(null);
 
     const raycasterRef = useRef(new THREE.Raycaster());
     const mouseRef = useRef(new THREE.Vector2());
@@ -56,7 +60,7 @@ export default function CityScene() {
         return unsub;
     }, []);
 
-    const { cityData, layers, setSelectedEntity, setTimeOfDay, setAgentCounts } = useCityStore();
+    const { cityData, layers, isXRayMode, setSelectedEntity, setTimeOfDay, setAgentCounts } = useCityStore();
 
     const initScene = useCallback(() => {
         if (!containerRef.current) return;
@@ -223,6 +227,9 @@ export default function CityScene() {
             if (lodRef.current) {
                 lodRef.current.update(camera, dt);
             }
+            if (envSimRef.current && speed > 0) {
+                envSimRef.current.update(dt, speed);
+            }
 
             // Push time-of-day to store every 30 frames
             frameCount++;
@@ -283,7 +290,7 @@ export default function CityScene() {
     function setupGround(scene) {
         const ground = new THREE.Mesh(
             new THREE.PlaneGeometry(20000, 20000),
-            new THREE.MeshPhongMaterial({ color: 0x0c0c16 })
+            new THREE.MeshPhongMaterial({ color: 0x0c0c16, transparent: true })
         );
         ground.rotation.x = -Math.PI / 2;
         ground.position.y = -1;            // just below terrain peaks (0) so wireframe sits above
@@ -308,6 +315,7 @@ export default function CityScene() {
         if (pedsRef.current) pedsRef.current.dispose();
         if (heatmapRef.current) heatmapRef.current.dispose();
         if (lodRef.current) lodRef.current.dispose();
+        if (envSimRef.current) envSimRef.current.dispose();
 
         const features = cityData.features;
         if (features.length === 0) return;
@@ -360,6 +368,20 @@ export default function CityScene() {
             const amenities = createAmenityGroup(features);
             amenities.name = 'amenities';
             cityGroup.add(amenities);
+            if (cancelled) return;
+            await yieldFrame();
+
+            // Pass 7: Vegetation (Phase 4)
+            const vegetation = createVegetationGroup(features);
+            vegetation.name = 'vegetation';
+            cityGroup.add(vegetation);
+            if (cancelled) return;
+            await yieldFrame();
+
+            // Pass 8: Pipelines (Phase 5)
+            const pipelines = createPipelineGroup(features);
+            pipelines.name = 'pipelines';
+            cityGroup.add(pipelines);
             if (cancelled) return;
             await yieldFrame();
 
@@ -477,6 +499,11 @@ export default function CityScene() {
             lod.register(buildings);
             lodRef.current = lod;
 
+            // Environment simulation (AQI/Wind)
+            const envSim = new EnvironmentSimulation(scene);
+            envSim.init(cityData, box);
+            envSimRef.current = envSim;
+
             console.log('[CityScene] City construction complete');
         };
 
@@ -505,9 +532,54 @@ export default function CityScene() {
         if (a) a.visible = layers.amenities;
         if (z) z.visible = layers.zones;
         if (rw) rw.visible = layers.railways;
+        const v = g.getObjectByName('vegetation');
+        if (v) v.visible = layers.vegetation;
+        const p = g.getObjectByName('pipelines');
+        if (p) p.visible = layers.pipelines;
 
         if (heatmapRef.current) heatmapRef.current.setVisible(!!layers.heatmap);
+        if (envSimRef.current) envSimRef.current.setVisible(!!layers.environment);
     }, [layers]);
+
+    // X-Ray Mode
+    useEffect(() => {
+        if (!sceneRef.current) return;
+        const ground = sceneRef.current.getObjectByName('ground');
+        if (ground) {
+            ground.material.opacity = isXRayMode ? 0.2 : 1.0;
+            ground.material.depthWrite = !isXRayMode;
+        }
+        
+        // Also make zones, water, and vegetation transparent if X-Ray is on
+        if (cityGroupRef.current) {
+            const makeTransparent = (groupName, opacityMultiplier) => {
+                const grp = cityGroupRef.current.getObjectByName(groupName);
+                if (grp) {
+                    grp.traverse(child => {
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(m => {
+                                    if (m.transparent !== undefined) {
+                                        m.opacity = isXRayMode ? 0.1 * opacityMultiplier : (m.userData.originalOpacity || m.opacity);
+                                    }
+                                });
+                            } else {
+                                if (child.material.userData.originalOpacity === undefined) {
+                                    child.material.userData.originalOpacity = child.material.opacity;
+                                }
+                                child.material.opacity = isXRayMode ? 0.1 * opacityMultiplier : child.material.userData.originalOpacity;
+                            }
+                        }
+                    });
+                }
+            };
+            
+            makeTransparent('zones', 1);
+            makeTransparent('water', 2);
+            makeTransparent('vegetation-ground', 1);
+        }
+        
+    }, [isXRayMode]);
 
     function disposeGroup(group) {
         group.traverse((obj) => {
