@@ -4,10 +4,10 @@
  */
 import React from 'react';
 import useCityStore from '../../store/cityStore';
-import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon, WaterIcon, TrainIcon, ZoneIcon } from './Icons';
+import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon, WaterIcon, TrainIcon, ZoneIcon, TreeIcon, PipelineIcon, XRayIcon, CloudIcon } from './Icons';
 
 export default function LayerToggles() {
-    const { layers, toggleLayer } = useCityStore();
+    const { layers, isXRayMode, toggleLayer, toggleXRayMode } = useCityStore();
 
     return (
         <div className="layer-toggles" id="layer-toggles">
@@ -56,11 +56,42 @@ export default function LayerToggles() {
             </button>
 
             <button
+                className={`layer-toggle ${layers.pipelines ? 'active' : ''}`}
+                onClick={() => toggleLayer('pipelines')}
+                title="Toggle pipelines & utilities"
+            >
+                <PipelineIcon />
+            </button>
+
+            <div className="layer-divider" style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+
+            <button
                 className={`layer-toggle ${layers.heatmap ? 'active' : ''}`}
                 onClick={() => toggleLayer('heatmap')}
                 title="Toggle density heatmap"
             >
                 <HeatmapIcon />
+            </button>
+            <button
+                className={`layer-toggle ${layers.environment ? 'active' : ''}`}
+                onClick={() => toggleLayer('environment')}
+                title="Toggle environment (Wind & AQI)"
+            >
+                <CloudIcon />
+            </button>
+            <button
+                className={`layer-toggle ${isXRayMode ? 'active' : ''}`}
+                onClick={() => toggleXRayMode()}
+                title="Toggle X-Ray Mode (Subsurface View)"
+            >
+                <XRayIcon />
+            </button>
+            <button
+                className={`layer-toggle ${layers.vegetation ? 'active' : ''}`}
+                onClick={() => toggleLayer('vegetation')}
+                title="Toggle vegetation & trees"
+            >
+                <TreeIcon />
             </button>
         </div>
     );
