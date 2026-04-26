@@ -57,9 +57,29 @@ def build_overpass_query(bbox_str: str) -> str:
   way["waterway"="riverbank"](if: is_closed());
   relation["waterway"="riverbank"]["type"="multipolygon"];
   way["natural"="coastline"];
+  
+  // Utilities (Phase 5)
+  way["man_made"="pipeline"];
 
   // Amenities
   node["amenity"];
+
+  // Vegetation & Land Cover (Phase 4)
+  way["natural"="wood"](if: is_closed());
+  relation["natural"="wood"]["type"="multipolygon"];
+  way["natural"="scrub"](if: is_closed());
+  relation["natural"="scrub"]["type"="multipolygon"];
+  way["natural"="tree_row"];
+  way["landuse"="forest"](if: is_closed());
+  relation["landuse"="forest"]["type"="multipolygon"];
+  way["landuse"="grass"](if: is_closed());
+  relation["landuse"="grass"]["type"="multipolygon"];
+  way["landuse"="orchard"](if: is_closed());
+  way["landuse"="meadow"](if: is_closed());
+  way["leisure"="park"](if: is_closed());
+  relation["leisure"="park"]["type"="multipolygon"];
+  way["leisure"="garden"](if: is_closed());
+  node["natural"="tree"];
 );
 out body;
 >;
