@@ -37,10 +37,14 @@ const useCityStore = create((set, get) => ({
         amenities: true,
         water: true,
         zones: true,
+        vegetation: true,
+        pipelines: true,
+        environment: false,
         heatmap: false,
     },
 
     // ─── Simulation ──────────────────────────
+    isXRayMode: false,
     isPlaying: true,
     simSpeed: 1,
     timeOfDay: { time: '06:00', icon: '☀️' },
@@ -53,6 +57,7 @@ const useCityStore = create((set, get) => ({
     toggleLayer: (layer) => set((state) => ({
         layers: { ...state.layers, [layer]: !state.layers[layer] },
     })),
+    toggleXRayMode: () => set((state) => ({ isXRayMode: !state.isXRayMode })),
     setIsPlaying: (playing) => set({ isPlaying: playing }),
     setSimSpeed: (speed) => set({ simSpeed: speed }),
     setTimeOfDay: (tod) => set({ timeOfDay: tod }),
