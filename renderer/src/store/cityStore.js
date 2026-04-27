@@ -3,8 +3,9 @@
  * Uses Zustand for lightweight reactive state management.
  */
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 
-const useCityStore = create((set, get) => ({
+const useCityStore = create(subscribeWithSelector((set, get) => ({
     // ─── City Data ───────────────────────────
     cityData: null,        // GeoJSON FeatureCollection (projected)
     cityName: '',
@@ -235,6 +236,27 @@ const useCityStore = create((set, get) => ({
             // screenshot save failure handled silently
         }
     },
-}));
+})));
 
 export default useCityStore;
+
+// ─── Fine-grained selectors (FIX #12/#13) ────────────────────────────────────
+// Import these in components instead of useCityStore() with no selector,
+// which would re-render on every store change.
+//
+// Usage: const layers = useLayersSelector();
+//        const selectedEntity = useSelectedEntitySelector();
+//
+import { shallow } from 'zustand/shallow';
+
+export const useLayersSelector       = () => useCityStore(s => s.layers, shallow);
+export const useSimSelector          = () => useCityStore(
+    s => ({ isPlaying: s.isPlaying, simSpeed: s.simSpeed, timeOfDay: s.timeOfDay }),
+    shallow
+);
+export const useSelectedEntitySelector = () => useCityStore(s => s.selectedEntity);
+export const useAgentCountsSelector  = () => useCityStore(s => s.agentCounts, shallow);
+export const useLoadingSelector      = () => useCityStore(
+    s => ({ isLoading: s.isLoading, error: s.error, progress: s.progress, showProgress: s.showProgress }),
+    shallow
+);
