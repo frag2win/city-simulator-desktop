@@ -3,93 +3,216 @@
  *
  * Coordinate system (set by Python spatial_processor.py, already projected):
  *   ring[i][0] → world X  (east-west, metres from bbox centre)
- *   ring[i][1] → world Z via negation (matches ringToShape + rotateX(-PI/2))
+ *   ring[i][1] → world -Z (matches ringToShape + rotateX(-PI/2))
  *   height      → world Y  (up, raw metres)
  *
- * HEIGHT_BANDS: exact HSL values from original buildingGeometry.js converted
- * to linear RGB so they work without THREE.Color.setHSL():
- *
- *   h:0.60, s:0.15, l:0.55  → RGB (0.494, 0.506, 0.633)  slate blue-grey
- *   h:0.58, s:0.18, l:0.62  → RGB (0.545, 0.558, 0.713)  steel blue
- *   h:0.56, s:0.22, l:0.68  → RGB (0.598, 0.612, 0.782)  lighter blue
- *   h:0.54, s:0.25, l:0.75  → RGB (0.656, 0.667, 0.844)  bright blue-white
- *
- * Conversion formula: standard HSL→RGB, hue in [0,1].
+ * Uses REAL polygon footprint extrusion (ear-clipping triangulation for the
+ * roof + per-edge wall quads) instead of axis-aligned bounding boxes.
+ * This matches the original buildingGeometry.js approach of ExtrudeGeometry.
  */
 
-// HSL → RGB helper (matches THREE.Color.setHSL exactly)
+// ── HSL → RGB (matches THREE.Color.setHSL) ──────────────────────────────────
 function hslToRgb(h, s, l) {
-    let r, g, b;
-    if (s === 0) {
-        r = g = b = l;
-    } else {
-        const hue2rgb = (p, q, t) => {
-            if (t < 0) t += 1;
-            if (t > 1) t -= 1;
-            if (t < 1/6) return p + (q - p) * 6 * t;
-            if (t < 1/2) return q;
-            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-            return p;
-        };
-        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-        const p = 2 * l - q;
-        r = hue2rgb(p, q, h + 1/3);
-        g = hue2rgb(p, q, h);
-        b = hue2rgb(p, q, h - 1/3);
-    }
-    return { r, g, b };
+    if (s === 0) return { r: l, g: l, b: l };
+    const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1; if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    return { r: hue2rgb(p, q, h + 1/3), g: hue2rgb(p, q, h), b: hue2rgb(p, q, h - 1/3) };
 }
 
-// Exact HEIGHT_BANDS from original buildingGeometry.js (HSL → RGB pre-computed)
-// BUG 2 FIX: Use original blue-grey palette, not neutral grey
+// Exact HEIGHT_BANDS from original buildingGeometry.js
 const HEIGHT_BANDS = [
-    { max: 8,        ...hslToRgb(0.60, 0.15, 0.55) }, // Low      — slate blue-grey
-    { max: 20,       ...hslToRgb(0.58, 0.18, 0.62) }, // Medium   — steel blue
-    { max: 40,       ...hslToRgb(0.56, 0.22, 0.68) }, // Tall     — lighter blue
-    { max: Infinity, ...hslToRgb(0.54, 0.25, 0.75) }, // High-rise — bright blue-white
+    { max: 8,        ...hslToRgb(0.60, 0.15, 0.55) },
+    { max: 20,       ...hslToRgb(0.58, 0.18, 0.62) },
+    { max: 40,       ...hslToRgb(0.56, 0.22, 0.68) },
+    { max: Infinity, ...hslToRgb(0.54, 0.25, 0.75) },
 ];
 
 function getBuildingColor(height) {
-    return HEIGHT_BANDS.find(b => height <= b.max) || HEIGHT_BANDS[HEIGHT_BANDS.length - 1];
+    return HEIGHT_BANDS.find(b => height <= b.max) || HEIGHT_BANDS[3];
 }
 
-/**
- * Append one box into flat typed-array buffers.
- * 5 faces × 4 verts = 20 verts per building (no bottom face — hidden by ground).
- * Unshared vertices → hard normals per face → correct Phong shading.
- * Top face gets +12% brightness to match original's lighter roof look.
- */
-function buildBox(cx, cy, w, d, height, r, g, bCol, positions, normals, colors, indices, vertexOffset) {
-    const x0 = cx - w / 2, x1 = cx + w / 2;
-    const z0 = -cy - d / 2, z1 = -cy + d / 2;
-    const y0 = 0, y1 = height;
+// ── Ear-clipping triangulation ───────────────────────────────────────────────
+// Triangulates a simple 2D polygon. Input: [[x,y],...] in CCW order, no dups.
+// Returns flat array of vertex indices (triples).
 
-    // Top-face brighter tint (matches original emissive/lighter roof shading)
+function signedArea2D(pts) {
+    let area = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        area += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]);
+    }
+    return area * 0.5;
+}
+
+function cross2D(ax, ay, bx, by) { return ax * by - ay * bx; }
+
+function isConvex(a, b, c) {
+    return cross2D(b[0] - a[0], b[1] - a[1], c[0] - a[0], c[1] - a[1]) > 0;
+}
+
+function pointInTriangle(p, a, b, c) {
+    const d1 = cross2D(b[0]-a[0], b[1]-a[1], p[0]-a[0], p[1]-a[1]);
+    const d2 = cross2D(c[0]-b[0], c[1]-b[1], p[0]-b[0], p[1]-b[1]);
+    const d3 = cross2D(a[0]-c[0], a[1]-c[1], p[0]-c[0], p[1]-c[1]);
+    return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+}
+
+function earClip(pts) {
+    const n = pts.length;
+    if (n < 3) return [];
+    if (n === 3) return [0, 1, 2];
+
+    const idx = Array.from({ length: n }, (_, i) => i);
+    const tris = [];
+    let safety = n * 3;
+
+    while (idx.length > 3 && safety-- > 0) {
+        let found = false;
+        const len = idx.length;
+        for (let i = 0; i < len; i++) {
+            const a = idx[(i - 1 + len) % len];
+            const b = idx[i];
+            const c = idx[(i + 1) % len];
+            if (!isConvex(pts[a], pts[b], pts[c])) continue;
+
+            let inside = false;
+            for (let j = 0; j < len; j++) {
+                const v = idx[j];
+                if (v === a || v === b || v === c) continue;
+                if (pointInTriangle(pts[v], pts[a], pts[b], pts[c])) { inside = true; break; }
+            }
+            if (inside) continue;
+
+            tris.push(a, b, c);
+            idx.splice(i, 1);
+            found = true;
+            break;
+        }
+        if (!found) break; // degenerate
+    }
+    if (idx.length === 3) tris.push(idx[0], idx[1], idx[2]);
+    return tris;
+}
+
+// ── Polygon extrusion ────────────────────────────────────────────────────────
+// Builds roof (triangulated polygon) + wall quads per edge.
+// Returns updated vertexOffset.
+
+function extrudePolygon(ring, height, r, g, bCol, positions, normals, colors, indices, vertexOffset) {
+    // Prepare 2D polygon — remove closing duplicate
+    let pts = ring.map(p => [p[0], p[1]]);
+    if (pts.length > 1 &&
+        Math.abs(pts[0][0] - pts[pts.length-1][0]) < 0.01 &&
+        Math.abs(pts[0][1] - pts[pts.length-1][1]) < 0.01) {
+        pts.pop();
+    }
+
+    // Deduplicate consecutive coincident vertices (matches original ringToShape)
+    const deduped = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+        const prev = deduped[deduped.length - 1];
+        if (Math.abs(pts[i][0] - prev[0]) > 0.01 || Math.abs(pts[i][1] - prev[1]) > 0.01) {
+            deduped.push(pts[i]);
+        }
+    }
+    pts = deduped;
+    if (pts.length < 3) return vertexOffset;
+
+    // Signed area check — skip zero-area polygons (matches original)
+    const area = signedArea2D(pts);
+    if (Math.abs(area) < 0.5) return vertexOffset;
+
+    // Ensure CCW winding for correct face normals
+    if (area < 0) pts.reverse();
+
+    const n = pts.length;
+
+    // Roof brightness boost (matches original emissive look)
     const tr = Math.min(r * 1.12, 1.0);
     const tg = Math.min(g * 1.12, 1.0);
     const tb = Math.min(bCol * 1.12, 1.0);
 
-    const faces = [
-        { v: [[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]], n: [ 0, 0, 1], cr: r,  cg: g,    cb: bCol },
-        { v: [[x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]], n: [ 0, 0,-1], cr: r,  cg: g,    cb: bCol },
-        { v: [[x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]], n: [-1, 0, 0], cr: r,  cg: g,    cb: bCol },
-        { v: [[x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]], n: [ 1, 0, 0], cr: r,  cg: g,    cb: bCol },
-        { v: [[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]], n: [ 0, 1, 0], cr: tr, cg: tg,   cb: tb  },
-    ];
+    // ── ROOF FACE (triangulated) ──────────────────────────────────────────
+    const roofTris = earClip(pts);
+    const roofBase = vertexOffset;
 
-    for (const face of faces) {
+    for (let i = 0; i < n; i++) {
+        positions.push(pts[i][0], height, -pts[i][1]);
+        normals.push(0, 1, 0);
+        colors.push(tr, tg, tb);
+    }
+    vertexOffset += n;
+
+    for (let i = 0; i < roofTris.length; i += 3) {
+        indices.push(roofBase + roofTris[i], roofBase + roofTris[i+1], roofBase + roofTris[i+2]);
+    }
+
+    // ── WALL QUADS (one per polygon edge) ─────────────────────────────────
+    for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const x0 = pts[i][0], y0 = pts[i][1];
+        const x1 = pts[j][0], y1 = pts[j][1];
+
+        const dx = x1 - x0, dy = y1 - y0;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len < 0.001) continue;
+
+        // Outward wall normal for CCW polygon: geographic (dy,-dx) → world (dy, 0, dx)
+        const nx = dy / len, nz = dx / len;
+
+        const wz0 = -y0, wz1 = -y1;
         const b = vertexOffset;
-        for (const [vx, vy, vz] of face.v) {
-            positions.push(vx, vy, vz);
-            normals.push(face.n[0], face.n[1], face.n[2]);
-            colors.push(face.cr, face.cg, face.cb);
-        }
+
+        // BL, BR, TR, TL
+        positions.push(x0, 0, wz0,  x1, 0, wz1,  x1, height, wz1,  x0, height, wz0);
+        normals.push(nx,0,nz, nx,0,nz, nx,0,nz, nx,0,nz);
+        colors.push(r,g,bCol, r,g,bCol, r,g,bCol, r,g,bCol);
         indices.push(b, b+1, b+2,  b, b+2, b+3);
+        vertexOffset += 4;
+    }
+
+    return vertexOffset;
+}
+
+// ── AABB fallback for degenerate polygons ────────────────────────────────────
+function buildBoxFallback(ring, height, r, g, bCol, positions, normals, colors, indices, vertexOffset) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const pt of ring) {
+        if (!isFinite(pt[0]) || !isFinite(pt[1])) continue;
+        if (pt[0] < minX) minX = pt[0]; if (pt[0] > maxX) maxX = pt[0];
+        if (pt[1] < minY) minY = pt[1]; if (pt[1] > maxY) maxY = pt[1];
+    }
+    const w = Math.min(Math.max(maxX - minX, 2), 400);
+    const d = Math.min(Math.max(maxY - minY, 2), 400);
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+
+    const x0 = cx - w/2, x1 = cx + w/2;
+    const z0 = -cy - d/2, z1 = -cy + d/2;
+    const tr = Math.min(r*1.12,1), tg = Math.min(g*1.12,1), tb = Math.min(bCol*1.12,1);
+
+    const faces = [
+        { v:[[x0,0,z1],[x1,0,z1],[x1,height,z1],[x0,height,z1]], n:[0,0,1],   cr:r,cg:g,cb:bCol },
+        { v:[[x1,0,z0],[x0,0,z0],[x0,height,z0],[x1,height,z0]], n:[0,0,-1],  cr:r,cg:g,cb:bCol },
+        { v:[[x0,0,z0],[x0,0,z1],[x0,height,z1],[x0,height,z0]], n:[-1,0,0],  cr:r,cg:g,cb:bCol },
+        { v:[[x1,0,z1],[x1,0,z0],[x1,height,z0],[x1,height,z1]], n:[1,0,0],   cr:r,cg:g,cb:bCol },
+        { v:[[x0,height,z1],[x1,height,z1],[x1,height,z0],[x0,height,z0]], n:[0,1,0], cr:tr,cg:tg,cb:tb },
+    ];
+    for (const f of faces) {
+        const b = vertexOffset;
+        for (const [vx,vy,vz] of f.v) { positions.push(vx,vy,vz); normals.push(...f.n); colors.push(f.cr,f.cg,f.cb); }
+        indices.push(b,b+1,b+2, b,b+2,b+3);
         vertexOffset += 4;
     }
     return vertexOffset;
 }
 
+// ── Main message handler ─────────────────────────────────────────────────────
 self.onmessage = function (e) {
     const { features } = e.data;
 
@@ -99,7 +222,7 @@ self.onmessage = function (e) {
 
     const positions = [], normals = [], colors = [], indices = [];
     const buildingRanges = [];
-    let vertexOffset = 0, validCount = 0, skipped = 0;
+    let vertexOffset = 0, validCount = 0, skipped = 0, fallbacks = 0;
 
     for (let fi = 0; fi < buildings.length; fi++) {
         const feature = buildings[fi];
@@ -108,90 +231,52 @@ self.onmessage = function (e) {
 
         const props = feature.properties || {};
 
-        // ── BUG 1 FIX: Correct field names matching schema_normalizer.py ──────
-        //
-        // schema_normalizer.py _normalize_properties() always writes:
-        //   props["height"]          = _safe_float(tags.get("height")) ?? (levels * 3.5)
-        //   props["building_levels"] = _safe_int(tags.get("building:levels")) ?? 3
-        //
-        // So props.height is ALWAYS present and already computed correctly.
-        // The problem: for Indian cities, OSM has almost no "height" tags —
-        // building:levels is present instead. The normalizer correctly computes
-        // height = building:levels * 3.5, BUT if building:levels is also absent,
-        // it defaults to DEFAULT_BUILDING_LEVELS (3) → height = 10.5 for every building.
-        //
-        // To restore height variation, we must honour building_levels when the
-        // height is only the default fallback (10.5). Real heights from OSM are
-        // preserved as-is. building_levels data overrides the 10.5 default.
-        //
-        // parseH: safe numeric parser, rejects 0/NaN/null
+        // Height resolution (field names match schema_normalizer.py exactly)
         const parseH = (v) => {
             if (v === null || v === undefined || v === '') return null;
             const n = parseFloat(String(v).replace(/[^0-9.]/g, ''));
             return (!isNaN(n) && n > 0) ? n : null;
         };
 
-        const osmHeight  = parseH(props.height);         // from "height" OSM tag
-        const osmLevels  = parseH(props.building_levels); // from "building:levels" OSM tag
-        //   ↑ schema_normalizer.py key is "building_levels" (confirmed above)
+        const osmHeight = parseH(props.height);
+        const osmLevels = parseH(props.building_levels);
 
-        // Priority: real OSM height > levels-derived > absolute fallback
-        // We treat osmHeight == 10.5 as "probably default, prefer levels if present"
-        // because normalizer sets DEFAULT=10.5 when no height tag exists.
         let height;
         if (osmHeight && osmHeight !== 10.5) {
-            // Explicit OSM "height" tag was present — use it directly
             height = osmHeight;
         } else if (osmLevels) {
-            // OSM "building:levels" tag was present — derive height
-            // 3.5m per floor (matches DEFAULT_LEVEL_HEIGHT_M in schema_normalizer.py)
             height = osmLevels * 3.5;
         } else {
-            // No height or level data in OSM — use fallback
             height = osmHeight || 10.5;
         }
-
-        // Clamp: min 4m (always visible), max 500m (Burj Khalifa)
         height = Math.min(Math.max(height, 4), 500);
 
-        // ── Footprint AABB ────────────────────────────────────────────────────
-        let minX = Infinity, maxX = -Infinity;
-        let minY = Infinity, maxY = -Infinity;
-        for (const pt of ring) {
-            const x = pt[0], y = pt[1];
-            if (!isFinite(x) || !isFinite(y)) continue;
-            if (x < minX) minX = x; if (x > maxX) maxX = x;
-            if (y < minY) minY = y; if (y > maxY) maxY = y;
-        }
-        if (!isFinite(minX) || !isFinite(minY)) { skipped++; continue; }
-
-        const rawW = Math.max(maxX - minX, 2);
-        const rawD = Math.max(maxY - minY, 2);
-
-        // Cap oversized footprints (airports/warehouses with huge OSM polygons)
-        const MAX_FOOTPRINT = 400;
-        const w = Math.min(rawW, MAX_FOOTPRINT);
-        const d = Math.min(rawD, MAX_FOOTPRINT);
-
-        const cx = (minX + maxX) / 2;
-        const cy = (minY + maxY) / 2;
-
-        // BUG 2 FIX: use original HEIGHT_BANDS (blue-grey HSL palette)
+        // Colour from original palette
         const { r, g, b } = getBuildingColor(height);
 
         const rangeStart = indices.length;
-        vertexOffset = buildBox(cx, cy, w, d, height, r, g, b,
-                                positions, normals, colors, indices, vertexOffset);
+        const prevOffset = vertexOffset;
+
+        // Try real polygon extrusion first, fall back to AABB box
+        vertexOffset = extrudePolygon(ring, height, r, g, b,
+                                      positions, normals, colors, indices, vertexOffset);
+
+        if (vertexOffset === prevOffset) {
+            // extrudePolygon rejected it (degenerate) — use box fallback
+            vertexOffset = buildBoxFallback(ring, height, r, g, b,
+                                            positions, normals, colors, indices, vertexOffset);
+            fallbacks++;
+        }
 
         buildingRanges.push({
-            start:       rangeStart,
-            count:       indices.length - rangeStart,
+            start:        rangeStart,
+            count:        indices.length - rangeStart,
             featureIndex: fi,
-            osmId:       props.osm_id,
+            osmId:        props.osm_id,
             height,
-            levels:      osmLevels || Math.max(Math.round(height / 3.5), 1),
-            name:        props.display_name || props.name || null,
-            building:    props.building_type || props.building || 'yes',
+            levels:       osmLevels || Math.max(Math.round(height / 3.5), 1),
+            name:         props.display_name || props.name || null,
+            building:     props.building_type || props.building || 'yes',
         });
 
         validCount++;
@@ -201,6 +286,8 @@ self.onmessage = function (e) {
     const nrmArr = new Float32Array(normals);
     const colArr = new Float32Array(colors);
     const idxArr = new Uint32Array(indices);
+
+    console.log(`[worker] ${validCount} extruded, ${fallbacks} fallback boxes, ${skipped} skipped`);
 
     self.postMessage(
         { posArr, nrmArr, colArr, idxArr, buildingRanges, validCount, skipped },
