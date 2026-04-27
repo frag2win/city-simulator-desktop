@@ -1,42 +1,44 @@
 /**
- * roadGeometry.js — Renders GeoJSON LineString roads as flat ribbons.
- * Each road is a separate mesh so per-road metadata (name, OSM ID) is preserved.
+ * roadGeometry.js — Renders GeoJSON LineString roads as flat merged ribbons.
+ * FIX 0a: ONE merged Mesh per road type → ~10 draw calls instead of 12,928.
+ * FIX 0f: MeshLambertMaterial replaces MeshStandardMaterial (no PBR needed for flat roads).
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Road colors by type
 const ROAD_COLORS = {
-    motorway: 0xe88d5a,
-    trunk: 0xd4885a,
-    primary: 0xc9a652,
-    secondary: 0x8b9fad,
-    tertiary: 0x7a8c9a,
+    motorway:    0xe88d5a,
+    trunk:       0xd4885a,
+    primary:     0xc9a652,
+    secondary:   0x8b9fad,
+    tertiary:    0x7a8c9a,
     residential: 0x5c6b77,
-    service: 0x4a5660,
-    footway: 0x6b8070,
-    cycleway: 0x5a8a6a,
-    path: 0x5a6a5a,
-    default: 0x5c6b77,
+    service:     0x4a5660,
+    footway:     0x6b8070,
+    cycleway:    0x5a8a6a,
+    path:        0x5a6a5a,
+    default:     0x5c6b77,
 };
 
 // Road widths in meters
 const ROAD_WIDTHS = {
-    motorway: 7.0,
-    trunk: 6.0,
-    primary: 5.0,
-    secondary: 4.0,
-    tertiary: 3.5,
+    motorway:    7.0,
+    trunk:       6.0,
+    primary:     5.0,
+    secondary:   4.0,
+    tertiary:    3.5,
     residential: 3.0,
-    service: 2.0,
-    footway: 1.0,
-    cycleway: 1.2,
-    path: 0.8,
-    default: 2.5,
+    service:     2.0,
+    footway:     1.0,
+    cycleway:    1.2,
+    path:        0.8,
+    default:     2.5,
 };
 
 /**
  * Create a Three.js group containing all road geometries.
- * Batches roads by type into merged meshes for fewer draw calls.
+ * Merges ALL roads of the same type into ONE Mesh — ~10 draw calls total.
  */
 export function createRoadGroup(features) {
     const group = new THREE.Group();
@@ -46,58 +48,54 @@ export function createRoadGroup(features) {
         (f) => f.properties?.osm_type === 'highway' && f.geometry?.type === 'LineString'
     );
 
-    // Bucket geometries by road type for merge
-    const buckets = {}; // type → { geometries: [], userData: [] }
+    if (roads.length === 0) return group;
+
+    // Bucket raw geometries by road type
+    const buckets = {}; // type → BufferGeometry[]
 
     for (const road of roads) {
         const type = road.properties?.highway_type || 'default';
         const geom = createRoadStripGeometry(road);
         if (!geom) continue;
-
         if (!buckets[type]) buckets[type] = [];
-        buckets[type].push({
-            geom, userData: {
-                type: 'road',
-                osm_id: road.properties?.osm_id,
-                osm_element_type: road.properties?.osm_element_type,
-                name: road.properties?.name,
-                display_name: road.properties?.display_name || road.properties?.name,
-                highway_type: type,
-                surface: road.properties?.surface,
-                lanes: road.properties?.lanes,
-            }
-        });
+        buckets[type].push(geom);
     }
 
-    // Render each road as its own mesh so we keep per-road metadata
-    // (name, OSM ID, display_name) for the entity info panel.
-    for (const [type, items] of Object.entries(buckets)) {
-        const color = ROAD_COLORS[type] || ROAD_COLORS.default;
+    // ONE merged Mesh per road type — replaces per-road Mesh loop
+    for (const [type, geoms] of Object.entries(buckets)) {
+        if (geoms.length === 0) continue;
 
-        for (const item of items) {
-            const mat = createRoadMaterial(color);
-            const mesh = new THREE.Mesh(item.geom, mat);
-            mesh.receiveShadow = true;
-            mesh.userData = item.userData;
-            group.add(mesh);
+        let merged;
+        try {
+            merged = mergeGeometries(geoms, false);
+            geoms.forEach(g => g.dispose()); // free intermediate RAM
+        } catch (err) {
+            console.warn(`[roads] Failed to merge type "${type}":`, err);
+            geoms.forEach(g => g.dispose());
+            continue;
         }
+        if (!merged) continue;
+
+        const color = ROAD_COLORS[type] || ROAD_COLORS.default;
+        // MeshLambertMaterial: flat/matte roads need no PBR — ~40% cheaper per fragment
+        const mat = new THREE.MeshLambertMaterial({
+            color,
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+        });
+
+        const mesh = new THREE.Mesh(merged, mat);
+        mesh.receiveShadow = true;
+        mesh.matrixAutoUpdate = false; // static — never moves
+        mesh.updateMatrix();
+        mesh.userData = { type: 'road', highway_type: type };
+        group.add(mesh);
     }
 
+    console.log(`[roads] Rendered ${roads.length} roads in ${group.children.length} draw calls`);
     return group;
-}
-
-function createRoadMaterial(color) {
-    return new THREE.MeshStandardMaterial({
-        color,
-        emissive: new THREE.Color(0x1a1a2e),
-        emissiveIntensity: 0.35,
-        roughness: 0.9,
-        metalness: 0.0,
-        side: THREE.DoubleSide,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
-    });
 }
 
 /**
@@ -131,17 +129,17 @@ function createRoadStripGeometry(feature) {
             if (len === 0) continue;
 
             const nx = -dy / len * halfWidth;
-            const ny = dx / len * halfWidth;
+            const ny =  dx / len * halfWidth;
 
             const idx = vertices.length / 3;
-            
+
             // Adjust elevation based on layer/tunnel status
             let elevation = 0.5;
             if (feature.properties?.is_tunnel || (feature.properties?.layer && feature.properties.layer < 0)) {
                 const layerLevel = feature.properties?.layer || -1;
-                elevation = layerLevel * 8; // -8m per layer underground
+                elevation = layerLevel * 8;
             }
-            
+
             vertices.push(x + nx, elevation, -(y + ny));
             vertices.push(x - nx, elevation, -(y - ny));
 
