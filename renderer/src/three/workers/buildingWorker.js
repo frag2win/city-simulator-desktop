@@ -1,22 +1,58 @@
 /**
  * buildingWorker.js — Off-main-thread building geometry construction.
- * FIX 0b: Runs in a Web Worker — no THREE.js dependency, pure math.
  * Receives raw OSM features, returns transferable typed arrays (zero-copy).
  *
- * Strategy: fast box extrusion per footprint.
- * The main thread receives Float32Array buffers and builds BufferGeometry.
+ * Strategy: fast box extrusion per footprint with UNSHARED vertices.
+ * 6 faces × 4 vertices = 24 vertices per box. This allows hard face normals
+ * and sharp shading instead of averaged smoothed normals.
  */
 
-// Height → RGB color bands (matches buildingGeometry.js HEIGHT_BANDS hue)
-const HEIGHT_BANDS = [
-    { max: 8,        r: 0.50, g: 0.52, b: 0.58 }, // low — slate
-    { max: 20,       r: 0.55, g: 0.57, b: 0.65 }, // medium — steel
-    { max: 40,       r: 0.60, g: 0.63, b: 0.72 }, // tall
-    { max: Infinity, r: 0.68, g: 0.70, b: 0.80 }, // high-rise
-];
+// Height → RGB color bands matching target grey/white style
+function getBuildingColor(height) {
+    const t = Math.min(height / 80, 1);
+    const r = 0.55 + t * 0.25;
+    const g = 0.55 + t * 0.25;
+    const b = 0.58 + t * 0.22;
+    return { r, g, b };
+}
 
-function getBand(height) {
-    return HEIGHT_BANDS.find(b => height <= b.max) || HEIGHT_BANDS[HEIGHT_BANDS.length - 1];
+function buildBox(cx, cy, w, d, height, r, g, bCol, positions, normals, colors, indices, vertexOffset) {
+    // 24 unique vertices (4 per face × 6 faces) — enables hard normals per face
+    const x0 = cx - w/2, x1 = cx + w/2;
+    const z0 = -cy - d/2, z1 = -cy + d/2;
+    const y0 = 0, y1 = height;
+
+    const faces = [
+        // [4 positions as [x,y,z], normal [nx,ny,nz]]
+        // Front face (z1)
+        { verts: [[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]], n: [0,0,1] },
+        // Back face (z0)  
+        { verts: [[x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]], n: [0,0,-1] },
+        // Left face (x0)
+        { verts: [[x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]], n: [-1,0,0] },
+        // Right face (x1)
+        { verts: [[x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]], n: [1,0,0] },
+        // Top face (y1) — slightly lighter color
+        { verts: [[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]], n: [0,1,0], topFace: true },
+    ];
+
+    for (const face of faces) {
+        const b = vertexOffset;
+        // lighter tint for top face
+        const fr = face.topFace ? Math.min(r * 1.4, 1) : r;
+        const fg = face.topFace ? Math.min(g * 1.4, 1) : g;
+        const fb = face.topFace ? Math.min(bCol * 1.4, 1) : bCol;
+
+        for (const [vx, vy, vz] of face.verts) {
+            positions.push(vx, vy, vz);
+            normals.push(...face.n);
+            colors.push(fr, fg, fb);
+        }
+        // 2 triangles per face
+        indices.push(b,b+1,b+2, b,b+2,b+3);
+        vertexOffset += 4;
+    }
+    return vertexOffset;
 }
 
 self.onmessage = function (e) {
@@ -26,87 +62,73 @@ self.onmessage = function (e) {
         f => f.properties?.osm_type === 'building' && f.geometry?.type === 'Polygon'
     );
 
-    // Pre-allocate typed arrays — worst case 8 verts × 3 floats per building
-    const maxVerts = buildings.length * 8;
-    const positions = new Float32Array(maxVerts * 3);
-    const colors    = new Float32Array(maxVerts * 3);
-    // Worst case: 10 faces × 3 indices each × per building
-    const indices   = new Uint32Array(buildings.length * 30);
-
-    let vOffset = 0; // vertex write cursor (float index / 3)
-    let iOffset = 0; // index write cursor
+    const positions = [];
+    const normals = [];
+    const colors = [];
+    const indices = [];
+    const buildingRanges = [];
+    let vertexOffset = 0;
     let validCount = 0;
     let skipped = 0;
 
-    for (const feature of buildings) {
+    for (let fi = 0; fi < buildings.length; fi++) {
+        const feature = buildings[fi];
         const ring = feature.geometry.coordinates[0];
         if (!ring || ring.length < 4) { skipped++; continue; }
 
-        const height = Math.max(feature.properties?.height || 10.5, 1);
+        // Fallback chain for height field
+        const props = feature.properties || {};
+        const rawHeight = 
+            props.height          ||   // direct OSM height tag
+            props.building_height ||   // normalizer renamed field  
+            props['building:height'] || // OSM colon key (sometimes passed raw)
+            (props.levels ? props.levels * 3.5 : null) ||  // levels × floor height
+            (props['building:levels'] ? props['building:levels'] * 3.5 : null) ||
+            10.5;                      // absolute fallback
+            
+        // clamp: min 3m (single storey), max 500m
+        const height = Math.min(Math.max(parseFloat(rawHeight) || 10.5, 3), 500);
 
-        // Compute AABB of footprint ring
-        let minX = Infinity, maxX = -Infinity;
-        let minY = Infinity, maxY = -Infinity;
-        for (const [x, y] of ring) {
+        let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+        for (const [x,y] of ring) {
             if (!isFinite(x) || !isFinite(y)) continue;
-            if (x < minX) minX = x; if (x > maxX) maxX = x;
-            if (y < minY) minY = y; if (y > maxY) maxY = y;
+            if(x<minX)minX=x; if(x>maxX)maxX=x;
+            if(y<minY)minY=y; if(y>maxY)maxY=y;
         }
         if (!isFinite(minX) || !isFinite(minY)) { skipped++; continue; }
 
-        const w  = Math.max(maxX - minX, 1);
-        const d  = Math.max(maxY - minY, 1);
-        const cx = (minX + maxX) / 2;
-        const cy = (minY + maxY) / 2;
+        const w = Math.max(maxX-minX, 2);
+        const d = Math.max(maxY-minY, 2);
+        const cx = (minX+maxX)/2;
+        const cy = (minY+maxY)/2;
 
-        const x0 = cx - w / 2, x1 = cx + w / 2;
-        const z0 = -cy - d / 2, z1 = -cy + d / 2;
+        const { r, g, b } = getBuildingColor(height);
 
-        // 8 box vertices: bottom (0-3) + top (4-7)
-        const vBase = vOffset;
-        // Bottom ring
-        positions[vBase*3+0] = x0; positions[vBase*3+1] = 0;      positions[vBase*3+2] = z0;
-        positions[vBase*3+3] = x1; positions[vBase*3+4] = 0;      positions[vBase*3+5] = z0;
-        positions[vBase*3+6] = x1; positions[vBase*3+7] = 0;      positions[vBase*3+8] = z1;
-        positions[vBase*3+9] = x0; positions[vBase*3+10]= 0;      positions[vBase*3+11]= z1;
-        // Top ring
-        positions[vBase*3+12]= x0; positions[vBase*3+13]= height; positions[vBase*3+14]= z0;
-        positions[vBase*3+15]= x1; positions[vBase*3+16]= height; positions[vBase*3+17]= z0;
-        positions[vBase*3+18]= x1; positions[vBase*3+19]= height; positions[vBase*3+20]= z1;
-        positions[vBase*3+21]= x0; positions[vBase*3+22]= height; positions[vBase*3+23]= z1;
-
-        const band = getBand(height);
-        for (let vi = 0; vi < 8; vi++) {
-            colors[(vBase + vi)*3+0] = band.r;
-            colors[(vBase + vi)*3+1] = band.g;
-            colors[(vBase + vi)*3+2] = band.b;
-        }
-
-        const b = vBase;
-        // 4 side faces (2 triangles each)
-        indices[iOffset++]=b;   indices[iOffset++]=b+4; indices[iOffset++]=b+5;
-        indices[iOffset++]=b;   indices[iOffset++]=b+5; indices[iOffset++]=b+1;
-        indices[iOffset++]=b+1; indices[iOffset++]=b+5; indices[iOffset++]=b+6;
-        indices[iOffset++]=b+1; indices[iOffset++]=b+6; indices[iOffset++]=b+2;
-        indices[iOffset++]=b+2; indices[iOffset++]=b+6; indices[iOffset++]=b+7;
-        indices[iOffset++]=b+2; indices[iOffset++]=b+7; indices[iOffset++]=b+3;
-        indices[iOffset++]=b+3; indices[iOffset++]=b+7; indices[iOffset++]=b+4;
-        indices[iOffset++]=b+3; indices[iOffset++]=b+4; indices[iOffset++]=b;
-        // Top face
-        indices[iOffset++]=b+4; indices[iOffset++]=b+7; indices[iOffset++]=b+6;
-        indices[iOffset++]=b+4; indices[iOffset++]=b+6; indices[iOffset++]=b+5;
-
-        vOffset += 8;
+        const rangeStart = indices.length;
+        vertexOffset = buildBox(cx, cy, w, d, height, r, g, b, 
+                                positions, normals, colors, indices, vertexOffset);
+        
+        buildingRanges.push({
+            start: rangeStart,
+            count: indices.length - rangeStart,
+            featureIndex: fi,
+            osmId: props.osm_id,
+            height,
+            levels: props.levels || props['building:levels'] || Math.floor(height / 3.5),
+            name: props.name || null,
+            building: props.building || 'yes',
+        });
+        
         validCount++;
     }
 
-    // Slice to actual used size (avoids transferring unused zeros)
-    const posSlice = positions.slice(0, vOffset * 3);
-    const colSlice = colors.slice(0, vOffset * 3);
-    const idxSlice = indices.slice(0, iOffset);
+    const posArr = new Float32Array(positions);
+    const nrmArr = new Float32Array(normals);
+    const colArr = new Float32Array(colors);
+    const idxArr = new Uint32Array(indices);
 
     self.postMessage(
-        { posArr: posSlice, colArr: colSlice, idxArr: idxSlice, validCount, skipped },
-        [posSlice.buffer, colSlice.buffer, idxSlice.buffer] // transferable — zero copy
+        { posArr, nrmArr, colArr, idxArr, buildingRanges, validCount, skipped },
+        [posArr.buffer, nrmArr.buffer, colArr.buffer, idxArr.buffer]
     );
 };
