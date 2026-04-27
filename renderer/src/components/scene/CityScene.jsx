@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createBuildingGroup } from '../../three/buildingGeometry';
 import { createRoadGroup } from '../../three/roadGeometry';
 import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
@@ -299,6 +298,50 @@ export default function CityScene() {
         scene.add(ground);
     }
 
+    // FIX 0b: Build buildings in a Web Worker — non-blocking, zero-copy buffer transfer
+    function buildBuildingsAsync(features) {
+        return new Promise((resolve) => {
+            const worker = new Worker(
+                new URL('../../three/workers/buildingWorker.js', import.meta.url),
+                { type: 'module' }
+            );
+            worker.onmessage = (e) => {
+                const { posArr, colArr, idxArr, validCount, skipped } = e.data;
+                console.log(`[buildings-worker] ${validCount} built, ${skipped} skipped`);
+
+                const geom = new THREE.BufferGeometry();
+                geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+                geom.setAttribute('color',    new THREE.BufferAttribute(colArr, 3));
+                geom.setIndex(new THREE.BufferAttribute(idxArr, 1));
+                geom.computeVertexNormals();
+
+                const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+                const mesh = new THREE.Mesh(geom, mat);
+                mesh.name = 'buildings-solid';
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                mesh.matrixAutoUpdate = false;
+                mesh.updateMatrix();
+                mesh.userData = { type: 'buildings_batch', instances: {} };
+
+                const group = new THREE.Group();
+                group.name = 'buildings';
+                group.add(mesh);
+                worker.terminate();
+                resolve(group);
+            };
+            worker.onerror = (err) => {
+                console.error('[buildings-worker] Error:', err);
+                // Fallback: return empty group so city still loads
+                const group = new THREE.Group();
+                group.name = 'buildings';
+                worker.terminate();
+                resolve(group);
+            };
+            worker.postMessage({ features });
+        });
+    }
+
     // Load city data + spawn agents (async chunked to avoid freezing UI)
     useEffect(() => {
         if (!sceneReady || !sceneRef.current || !cityData?.features) return;
@@ -320,73 +363,70 @@ export default function CityScene() {
         const features = cityData.features;
         if (features.length === 0) return;
 
-        // Yield to browser to allow repaint between heavy geometry passes
         const yieldFrame = () => new Promise(resolve => setTimeout(resolve, 0));
 
         const buildCity = async () => {
             const cityGroup = new THREE.Group();
             cityGroup.name = 'city';
 
-            console.log(`[CityScene] Building geometry for ${features.length} features…`);
+            // FIX 0d: Add cityGroup to scene IMMEDIATELY so user sees it populate
+            scene.add(cityGroup);
+            cityGroupRef.current = cityGroup;
 
-            // Pass 1: Buildings (heaviest)
-            const buildings = createBuildingGroup(features);
-            buildings.name = 'buildings';
-            cityGroup.add(buildings);
-            if (cancelled) return;
-            await yieldFrame();
+            console.log(`[CityScene] Progressive build for ${features.length} features…`);
 
-            // Pass 2: Roads
+            // Stage 1 (~100ms): Roads visible first
             const roads = createRoadGroup(features);
             roads.name = 'roads';
             cityGroup.add(roads);
+            await yieldFrame(); // paint roads before continuing
             if (cancelled) return;
-            await yieldFrame();
 
-            // Pass 3: Water
+            // Stage 1b: Water + Zones (fast, polygon-based)
             const water = createWaterGroup(features);
             water.name = 'water';
             cityGroup.add(water);
-            if (cancelled) return;
             await yieldFrame();
+            if (cancelled) return;
 
-            // Pass 4: Zones
             const zones = createZoneGroup(features);
             zones.name = 'zones';
             cityGroup.add(zones);
-            if (cancelled) return;
             await yieldFrame();
+            if (cancelled) return;
 
-            // Pass 5: Railways
+            // Stage 2: Buildings via worker (started concurrently — resolves in ~1-2s)
+            const buildingsPromise = buildBuildingsAsync(features);
+
+            // Stage 3: Secondary layers while worker builds buildings
             const railways = createRailGroup(features);
             railways.name = 'railways';
             cityGroup.add(railways);
-            if (cancelled) return;
             await yieldFrame();
+            if (cancelled) return;
 
-            // Pass 6: Amenities
             const amenities = createAmenityGroup(features);
             amenities.name = 'amenities';
             cityGroup.add(amenities);
-            if (cancelled) return;
             await yieldFrame();
+            if (cancelled) return;
 
-            // Pass 7: Vegetation (Phase 4)
             const vegetation = createVegetationGroup(features);
             vegetation.name = 'vegetation';
             cityGroup.add(vegetation);
-            if (cancelled) return;
             await yieldFrame();
+            if (cancelled) return;
 
-            // Pass 8: Pipelines (Phase 5)
             const pipelines = createPipelineGroup(features);
             pipelines.name = 'pipelines';
             cityGroup.add(pipelines);
-            if (cancelled) return;
             await yieldFrame();
+            if (cancelled) return;
 
-            scene.add(cityGroup);
-            cityGroupRef.current = cityGroup;
+            // Stage 4: Await buildings from worker — add last so city is already visible
+            const buildings = await buildingsPromise;
+            if (cancelled) return;
+            cityGroup.add(buildings);
 
             const isBoxValid = (b) =>
                 !b.isEmpty() &&
