@@ -102,14 +102,17 @@ async def cache_city(bbox: str, name: str, geojson: dict):
     """
     Cache city GeoJSON data.
     If an entry with the same bbox exists, it is replaced.
+    FIX #5: json.dumps runs in thread pool — never blocks the async event loop.
     """
+    import asyncio
     db_path = get_db_path()
-    geojson_str = json.dumps(geojson)
+
+    # CPU-bound serialization — run in thread pool to keep health checks responsive
+    geojson_str = await asyncio.to_thread(json.dumps, geojson)
     feature_count = len(geojson.get("features", []))
     size_bytes = len(geojson_str.encode("utf-8"))
 
     async with aiosqlite.connect(db_path) as db:
-        # Upsert — delete existing, insert new
         await db.execute("DELETE FROM city_cache WHERE bbox = ?", (bbox,))
         await db.execute(
             """INSERT INTO city_cache (name, bbox, geojson, feature_count, size_bytes, cached_at, ttl_hours)
@@ -118,7 +121,7 @@ async def cache_city(bbox: str, name: str, geojson: dict):
         )
         await db.commit()
 
-    logger.info(f"Cached city '{name}' — {feature_count} features, {size_bytes / 1024:.1f} KB")
+    logger.info(f"Cached city '{name}' \u2014 {feature_count} features, {size_bytes / 1024:.1f} KB")
 
 
 async def list_cached_cities() -> list[dict]:
