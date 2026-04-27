@@ -124,7 +124,10 @@ async def query_overpass(
                 response = await client.post(
                     OVERPASS_URL,
                     data={"data": query},
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "User-Agent": "CitySimulator/1.0 (https://github.com/frag2win/city-simulator-desktop)"
+                    },
                 )
 
             if response.status_code == 200:

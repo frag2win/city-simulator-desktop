@@ -95,6 +95,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
     railways = sum(1 for f in unique_features if f["properties"]["osm_type"] == "railway")
     amenities = sum(1 for f in unique_features if f["properties"]["osm_type"] == "amenity")
     vegetation = sum(1 for f in unique_features if f["properties"]["osm_type"] == "vegetation")
+    pipelines = sum(1 for f in unique_features if f["properties"]["osm_type"] == "pipeline")
 
     metadata = {
         "feature_count": len(unique_features),
@@ -104,6 +105,7 @@ def normalize_overpass_response(raw_data: dict, on_progress=None) -> dict:
         "railways": railways,
         "amenities": amenities,
         "vegetation": vegetation,
+        "pipelines": pipelines,
     }
 
     logger.info(f"Feature breakdown: {metadata}")
