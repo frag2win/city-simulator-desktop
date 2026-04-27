@@ -155,6 +155,14 @@ export default function CityScene() {
                 const hMesh = highlightRef.current.mesh;
                 if (hMesh.isBatchedMesh && highlightRef.current.batchId !== undefined) {
                     hMesh.setColorAt(highlightRef.current.batchId, originalColorRef.current);
+                } else if (hMesh.userData?.buildingRanges && highlightRef.current.affectedVerts) {
+                    // Restore vertex colors for building batch
+                    const colorAttr = hMesh.geometry.attributes.color;
+                    highlightRef.current.affectedVerts.forEach((vi, i) => {
+                        const original = originalColorRef.current[i];
+                        colorAttr.setXYZ(vi, original.r, original.g, original.b);
+                    });
+                    colorAttr.needsUpdate = true;
                 } else if (hMesh.material) {
                     hMesh.material.color.copy(originalColorRef.current);
                     hMesh.material.emissive?.setHex(0x000000);
@@ -167,7 +175,50 @@ export default function CityScene() {
             if (hit) {
                 const mesh = hit.object;
 
-                if (mesh.isBatchedMesh && hit.batchId !== undefined) {
+                if (mesh.name === 'buildings-solid' && mesh.userData?.buildingRanges) {
+                    // BUG 1: Find which building owns this triangle
+                    const triangleIndex = hit.faceIndex;
+                    const indexPosition = triangleIndex * 3;
+                    
+                    const ranges = mesh.userData.buildingRanges;
+                    const building = ranges.find(r => 
+                        indexPosition >= r.start && indexPosition < r.start + r.count
+                    );
+                    
+                    if (building) {
+                        setSelectedEntity({
+                            type: 'building', // explicitly say building
+                            osm_id: building.osmId,
+                            name: building.name || `Building #${building.osmId}`,
+                            height: building.height,
+                            levels: building.levels,
+                            building_type: building.building,
+                        });
+                        
+                        // Highlight: save original colors, then set to blue
+                        const colorAttr = mesh.geometry.attributes.color;
+                        const highlightColor = new THREE.Color(0x44aaff);
+                        const idxArray = mesh.geometry.index.array;
+                        
+                        const affectedVertsSet = new Set();
+                        for (let i = building.start; i < building.start + building.count; i++) {
+                            affectedVertsSet.add(idxArray[i]);
+                        }
+                        const affectedVerts = Array.from(affectedVertsSet);
+                        
+                        originalColorRef.current = affectedVerts.map(vi => ({
+                            r: colorAttr.getX(vi),
+                            g: colorAttr.getY(vi),
+                            b: colorAttr.getZ(vi),
+                        }));
+                        highlightRef.current = { mesh, affectedVerts };
+                        
+                        affectedVerts.forEach(vi => {
+                            colorAttr.setXYZ(vi, highlightColor.r, highlightColor.g, highlightColor.b);
+                        });
+                        colorAttr.needsUpdate = true;
+                    }
+                } else if (mesh.isBatchedMesh && hit.batchId !== undefined) {
                     const originalColor = new THREE.Color();
                     mesh.getColorAt(hit.batchId, originalColor);
                     originalColorRef.current = originalColor;
@@ -307,22 +358,21 @@ export default function CityScene() {
                 { type: 'module' }
             );
             worker.onmessage = (e) => {
-                const { posArr, colArr, idxArr, validCount, skipped } = e.data;
+                const { posArr, nrmArr, colArr, idxArr, buildingRanges, validCount, skipped } = e.data;
                 console.log(`[buildings-worker] ${validCount} built, ${skipped} skipped`);
 
                 const geom = new THREE.BufferGeometry();
                 geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+                geom.setAttribute('normal',   new THREE.BufferAttribute(nrmArr, 3)); // BUG 3: use worker hard normals
                 geom.setAttribute('color',    new THREE.BufferAttribute(colArr, 3));
                 geom.setIndex(new THREE.BufferAttribute(idxArr, 1));
-                // FIX 1b: computeVertexNormals AFTER setIndex — confirmed correct order
-                geom.computeVertexNormals();
+                // DO NOT computeVertexNormals() — using hard normals from worker
 
-                // FIX 1c: MeshPhong instead of Lambert — per-fragment lighting on
-                // buildings with only 8 verts/box; Lambert is per-vertex = blocky shading
                 const mat = new THREE.MeshPhongMaterial({
                     vertexColors: true,
-                    shininess: 15,
-                    specular: new THREE.Color(0x222233),
+                    shininess: 25,
+                    specular: new THREE.Color(0x1a1a2e),
+                    side: THREE.FrontSide,
                 });
                 const mesh = new THREE.Mesh(geom, mat);
                 mesh.name = 'buildings-solid';
@@ -330,7 +380,8 @@ export default function CityScene() {
                 mesh.receiveShadow = true;
                 mesh.matrixAutoUpdate = false;
                 mesh.updateMatrix();
-                mesh.userData = { type: 'buildings_batch', instances: {} };
+                // BUG 1: store lookup table on mesh
+                mesh.userData = { type: 'buildings_batch', buildingRanges };
 
                 const group = new THREE.Group();
                 group.name = 'buildings';
