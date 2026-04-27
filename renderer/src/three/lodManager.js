@@ -1,69 +1,95 @@
 /**
  * lodManager.js — Level-of-Detail manager for distant buildings.
  *
- * FIX 0e improvements:
- *  1. Frustum culling — objects behind camera are hidden immediately, skipping LOD math
- *  2. Distance-delta skip — skip buildings whose distance changed < 5 units since last tick
- *  3. Extended 4-tier distances tuned for dense urban scenes (Mumbai/London density)
+ * BUG FIXES:
+ *  2a. containsPoint() → intersectsSphere() — a building's center can be
+ *      outside the frustum while the mesh is still partially visible.
+ *      intersectsSphere() against the bounding sphere is the correct test.
+ *  2b. Distance-delta skip NO LONGER controls visibility — only controls
+ *      whether we recompute the LOD tier (castShadow, height threshold).
+ *      Visibility is always set for every in-frustum object.
+ *  2c. register() forces updateMatrixWorld(true) so matrixAutoUpdate=false
+ *      meshes have correct world matrices for distance / frustum math.
  *
- * Called each frame from the render loop (throttled internally to 0.5s interval).
+ * Perf notes (from 0e):
+ *  - Frustum built once per tick, not per building
+ *  - _lastDist map skips tier-switching math when camera moves < 5 units
+ *  - 4-tier distance thresholds tuned for dense urban scenes
  */
 import * as THREE from 'three';
 
 const LOD_NEAR  =  400;   // Full detail + shadows
 const LOD_MID   =  900;   // No shadows
 const LOD_FAR   = 2000;   // Only buildings >= 8m
-const LOD_ULTRA = 5000;   // Only buildings >= 25m (skyscrapers only)
+const LOD_ULTRA = 5000;   // Only buildings >= 25m
 
 const MIN_HEIGHT_FAR   =  8;
 const MIN_HEIGHT_ULTRA = 25;
 
-// Pre-allocated — never allocate inside update()
+// Pre-allocated scratch objects — never new() inside update()
 const _cameraPos        = new THREE.Vector3();
 const _objPos           = new THREE.Vector3();
 const _frustum          = new THREE.Frustum();
 const _projScreenMatrix = new THREE.Matrix4();
+const _sphere           = new THREE.Sphere(); // FIX 2a: for intersectsSphere
 
 export class LODManager {
     constructor() {
-        this.buildings    = [];   // [{ mesh, height }]
-        this.enabled      = true;
-        this.lastUpdate   = 0;
-        this.updateInterval = 0.5; // seconds between full LOD recalculations
-        this._lastDist    = new Map(); // mesh → last computed distance
+        this.buildings      = [];   // [{ mesh, height, boundingSphere }]
+        this.enabled        = true;
+        this.lastUpdate     = 0;
+        this.updateInterval = 0.5;  // seconds between full LOD ticks
+        this._lastDist      = new Map(); // entry → last computed distance
     }
 
     /**
-     * Register a building group for LOD management.
-     * Accepts both BatchedMesh (worker path) and legacy individual meshes.
-     * @param {THREE.Group} buildingGroup — the 'buildings' group from CityScene
+     * Register building group. Forces a world-matrix update so that
+     * matrixAutoUpdate=false meshes have correct matrixWorld for distance math.
+     * FIX 2c: buildingGroup.updateMatrixWorld(true) called here.
      */
     register(buildingGroup) {
         this.buildings = [];
         this._lastDist.clear();
         if (!buildingGroup) return;
 
+        // FIX 2c: ensure all world matrices are current before we cache positions
+        buildingGroup.updateMatrixWorld(true);
+
         buildingGroup.traverse((obj) => {
-            if ((obj.isMesh || obj.isBatchedMesh) && obj.name === 'buildings-solid') {
-                // Worker path: one merged mesh — treat as single LOD entry
-                this.buildings.push({ mesh: obj, height: 999 /* always show */ });
-            } else if (obj.isMesh && obj.userData?.type === 'building') {
-                // Legacy individual building mesh
-                this.buildings.push({
-                    mesh: obj,
-                    height: obj.userData.height || 10,
-                });
+            if (!obj.isMesh && !obj.isBatchedMesh) return;
+
+            let entry = null;
+
+            if (obj.name === 'buildings-solid') {
+                // Worker path: single merged mesh
+                entry = { mesh: obj, height: 999 };
+            } else if (obj.userData?.type === 'building') {
+                // Legacy per-building mesh
+                entry = { mesh: obj, height: obj.userData.height || 10 };
             }
+
+            if (!entry) return;
+
+            // FIX 2a: pre-compute bounding sphere for intersectsSphere check
+            if (obj.geometry) {
+                if (!obj.geometry.boundingSphere) {
+                    obj.geometry.computeBoundingSphere();
+                }
+                entry.boundingSphere = obj.geometry.boundingSphere;
+            }
+
+            this.buildings.push(entry);
         });
 
         console.log(`[LODManager] Registered ${this.buildings.length} LOD entries`);
     }
 
     /**
-     * Update LOD levels based on camera distance.
-     * Throttled to updateInterval seconds. Frustum-culls before any distance math.
-     * @param {THREE.Camera} camera
-     * @param {number} dt — delta time in seconds
+     * Update LOD — called every frame, throttled to updateInterval.
+     * FIX 2a: sphere-based frustum test instead of containsPoint.
+     * FIX 2b: visibility is ALWAYS reset for in-frustum objects;
+     *         only the LOD tier (castShadow / height filter) uses the
+     *         distance-delta skip optimisation.
      */
     update(camera, dt) {
         if (!this.enabled || this.buildings.length === 0) return;
@@ -72,34 +98,48 @@ export class LODManager {
         if (this.lastUpdate < this.updateInterval) return;
         this.lastUpdate = 0;
 
-        // Build frustum ONCE per LOD tick (not per building)
+        // Build frustum once per tick
         _projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         _frustum.setFromProjectionMatrix(_projScreenMatrix);
-
         camera.getWorldPosition(_cameraPos);
 
         for (const b of this.buildings) {
             b.mesh.getWorldPosition(_objPos);
 
-            // Frustum cull: hide objects outside camera view entirely
-            if (!_frustum.containsPoint(_objPos)) {
-                b.mesh.visible = false;
-                continue;
+            // ── FIX 2a: intersectsSphere instead of containsPoint ────────────
+            // A building's centroid can be off-screen while part of the mesh
+            // is still visible (large merged mesh, or building on frustum edge).
+            if (b.boundingSphere) {
+                _sphere.copy(b.boundingSphere);
+                _sphere.applyMatrix4(b.mesh.matrixWorld);
+                if (!_frustum.intersectsSphere(_sphere)) {
+                    b.mesh.visible = false;
+                    continue;
+                }
+            } else {
+                // No bounding sphere (e.g. empty group) — fall back to point test
+                if (!_frustum.containsPoint(_objPos)) {
+                    b.mesh.visible = false;
+                    continue;
+                }
             }
+
+            // Object is in frustum — always make it visible first
+            // FIX 2b: visibility reset is unconditional, NOT gated by distance delta
+            b.mesh.visible = true;
 
             const dist = _cameraPos.distanceTo(_objPos);
 
-            // Skip recalculation if camera barely moved relative to this building
+            // ── FIX 2b: distance-delta skip only controls TIER changes ───────
+            // (castShadow + height visibility filter) — never controls .visible
             const lastDist = this._lastDist.get(b) ?? -999;
-            if (Math.abs(dist - lastDist) < 5) continue;
+            if (Math.abs(dist - lastDist) < 5) continue; // skip tier recalc only
             this._lastDist.set(b, dist);
 
-            // Apply 4-tier LOD
+            // Apply 4-tier LOD (shadow + height filter only — visibility already set above)
             if (dist < LOD_NEAR) {
-                b.mesh.visible    = true;
                 b.mesh.castShadow = true;
             } else if (dist < LOD_MID) {
-                b.mesh.visible    = true;
                 b.mesh.castShadow = false;
             } else if (dist < LOD_FAR) {
                 b.mesh.visible    = b.height >= MIN_HEIGHT_FAR;
