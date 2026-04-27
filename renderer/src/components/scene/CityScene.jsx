@@ -87,8 +87,8 @@ export default function CityScene() {
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.shadowMap.enabled = true;
-        // FIX 1d: PCFSoftShadowMap — smoother shadow edges on building faces
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // PCFSoftShadowMap is deprecated in r183, using PCFShadowMap
+        renderer.shadowMap.type = THREE.PCFShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.3;
         container.appendChild(renderer.domElement);
