@@ -87,7 +87,8 @@ export default function CityScene() {
         renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFShadowMap;
+        // FIX 1d: PCFSoftShadowMap — smoother shadow edges on building faces
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.3;
         container.appendChild(renderer.domElement);
@@ -313,9 +314,16 @@ export default function CityScene() {
                 geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
                 geom.setAttribute('color',    new THREE.BufferAttribute(colArr, 3));
                 geom.setIndex(new THREE.BufferAttribute(idxArr, 1));
+                // FIX 1b: computeVertexNormals AFTER setIndex — confirmed correct order
                 geom.computeVertexNormals();
 
-                const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+                // FIX 1c: MeshPhong instead of Lambert — per-fragment lighting on
+                // buildings with only 8 verts/box; Lambert is per-vertex = blocky shading
+                const mat = new THREE.MeshPhongMaterial({
+                    vertexColors: true,
+                    shininess: 15,
+                    specular: new THREE.Color(0x222233),
+                });
                 const mesh = new THREE.Mesh(geom, mat);
                 mesh.name = 'buildings-solid';
                 mesh.castShadow = true;
@@ -535,6 +543,10 @@ export default function CityScene() {
             heatmapRef.current = heatmap;
 
             // LOD manager
+            // FIX 2c: force world matrix update before registering — meshes have
+            // matrixAutoUpdate=false so their matrixWorld must be manually refreshed
+            // once after cityGroup is positioned (camera fit sets controls.target above).
+            cityGroupRef.current.updateMatrixWorld(true);
             const lod = new LODManager();
             lod.register(buildings);
             lodRef.current = lod;
