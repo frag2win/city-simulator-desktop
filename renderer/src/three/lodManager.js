@@ -52,33 +52,36 @@ export class LODManager {
         this._lastDist.clear();
         if (!buildingGroup) return;
 
-        // FIX 2c: ensure all world matrices are current before we cache positions
+        // FIX 2c: force world matrix update before registering — meshes have
+        // matrixAutoUpdate=false so their matrixWorld must be manually refreshed
         buildingGroup.updateMatrixWorld(true);
 
         buildingGroup.traverse((obj) => {
             if (!obj.isMesh && !obj.isBatchedMesh) return;
 
-            let entry = null;
-
             if (obj.name === 'buildings-solid') {
-                // Worker path: single merged mesh
-                entry = { mesh: obj, height: 999 };
-            } else if (obj.userData?.type === 'building') {
-                // Legacy per-building mesh
-                entry = { mesh: obj, height: obj.userData.height || 10 };
+                // BUG 3 FIX: merged mesh — the whole city is ONE object.
+                // Three.js frustum-culls it when its bounding sphere centre
+                // leaves the frustum (happens on close zoom). Disabling
+                // frustumCulled lets Three.js always draw it; the GPU clip
+                // unit discards off-screen fragments for free anyway.
+                obj.frustumCulled = false;
+                // Do NOT add to this.buildings — LOD manager has no
+                // per-building height data for the merged mesh.
+                return;
             }
 
-            if (!entry) return;
-
-            // FIX 2a: pre-compute bounding sphere for intersectsSphere check
-            if (obj.geometry) {
-                if (!obj.geometry.boundingSphere) {
+            if (obj.isMesh && obj.userData?.type === 'building') {
+                // Legacy individual meshes (pre-optimization path)
+                if (obj.geometry && !obj.geometry.boundingSphere) {
                     obj.geometry.computeBoundingSphere();
                 }
-                entry.boundingSphere = obj.geometry.boundingSphere;
+                this.buildings.push({
+                    mesh: obj,
+                    height: obj.userData.height || 10,
+                    boundingSphere: obj.geometry?.boundingSphere ?? null,
+                });
             }
-
-            this.buildings.push(entry);
         });
 
         console.log(`[LODManager] Registered ${this.buildings.length} LOD entries`);
