@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.api.health import router as health_router
 from app.api.city import router as city_router
 from app.core.config import settings
@@ -31,6 +32,9 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         lifespan=lifespan,
     )
+
+    # GZip compression — reduces 22MB city JSON to ~6MB (FIX #7)
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     # CORS — allow only localhost (Electron renderer)
     app.add_middleware(
