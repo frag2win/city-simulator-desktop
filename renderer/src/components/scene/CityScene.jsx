@@ -6,7 +6,7 @@ import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
 import { createZoneGroup } from '../../three/zoneGeometry';
 import { createRailGroup } from '../../three/railGeometry';
-import { createTerrainGroup } from '../../three/terrainGeometry';
+import { createTerrainGroup, fetchTerrainData } from '../../three/terrainGeometry';
 import { createVegetationGroup } from '../../three/vegetationGeometry';
 import { createPipelineGroup } from '../../three/pipelineGeometry';
 import { EnvironmentSimulation } from '../../three/environmentSimulation';
@@ -691,33 +691,49 @@ export default function CityScene() {
         
     }, [isXRayMode]);
 
-    // Terrain rendering effect
+    // Terrain rendering effect — fetches elevation directly from Open-Meteo API
     useEffect(() => {
-        if (!sceneReady || !sceneRef.current || !terrainData || !cityData?.metadata?.origin) return;
+        if (!sceneReady || !sceneRef.current || !cityData?.metadata?.origin || !cityData?.bbox) return;
 
         const scene = sceneRef.current;
         const origin = cityData.metadata.origin;
-        const bbox = cityData.bbox;
+        const bbox = cityData.bbox;  // [west, south, east, north]
+        let cancelled = false;
 
-        if (terrainGroupRef.current) {
-            scene.remove(terrainGroupRef.current);
-            disposeGroup(terrainGroupRef.current);
-        }
+        (async () => {
+            try {
+                console.log('[terrain] Starting elevation fetch for bbox:', bbox);
+                const terrainData = await fetchTerrainData(bbox);
 
-        const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
-        terrainGroup.visible = !!layers.terrain;
-        scene.add(terrainGroup);
-        terrainGroupRef.current = terrainGroup;
+                if (cancelled) return;
 
-        // BUG Fix 3: Adjust ground plane based on terrainMinY to avoid dark band gaps
-        const ground = scene.getObjectByName('ground');
-        if (ground) {
-            const box = new THREE.Box3().setFromObject(terrainGroup);
-            // set ground just below the lowest terrain point
-            ground.position.y = Math.min(-1, box.min.y - 5);
-        }
+                // Remove previous terrain
+                if (terrainGroupRef.current) {
+                    scene.remove(terrainGroupRef.current);
+                    disposeGroup(terrainGroupRef.current);
+                }
 
-    }, [terrainData, cityData, sceneReady]);
+                const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
+                terrainGroup.visible = !!layers.terrain;
+                scene.add(terrainGroup);
+                terrainGroupRef.current = terrainGroup;
+
+                // Adjust ground plane to sit below terrain
+                const ground = scene.getObjectByName('ground');
+                if (ground) {
+                    const box = new THREE.Box3().setFromObject(terrainGroup);
+                    ground.position.y = Math.min(-1, box.min.y - 5);
+                }
+
+                console.log('[terrain] Terrain mesh added to scene');
+            } catch (err) {
+                console.warn('[terrain] Failed to load elevation:', err.message);
+                // Fallback: keep existing flat ground — city still works fine
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [cityData, sceneReady]);
 
     function disposeGroup(group) {
         group.traverse((obj) => {
