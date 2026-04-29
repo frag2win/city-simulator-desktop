@@ -237,14 +237,6 @@ self.onmessage = function (e) {
     const buildingRanges = [];
     let vertexOffset = 0, validCount = 0, skipped = 0, fallbacks = 0;
 
-    // ── Spatial hash of existing building centres (for infill overlap check) ──
-    const CELL_SIZE = 20; // metres per hash cell
-    const occupiedCells = new Set();
-
-    function hashKey(x, y) {
-        return `${Math.floor(x / CELL_SIZE)},${Math.floor(y / CELL_SIZE)}`;
-    }
-
     for (let fi = 0; fi < buildings.length; fi++) {
         const feature = buildings[fi];
         const ring = feature.geometry.coordinates[0];
@@ -272,13 +264,11 @@ self.onmessage = function (e) {
         }
         height = Math.min(Math.max(height, 4), 500);
 
-        // Colour from original palette
         const { r, g, b } = getBuildingColor(height);
 
         const rangeStart = indices.length;
         const prevOffset = vertexOffset;
 
-        // Try real polygon extrusion first, fall back to AABB box
         vertexOffset = extrudePolygon(ring, height, r, g, b,
                                       positions, normals, colors, indices, vertexOffset);
 
@@ -286,20 +276,6 @@ self.onmessage = function (e) {
             vertexOffset = buildBoxFallback(ring, height, r, g, b,
                                             positions, normals, colors, indices, vertexOffset);
             fallbacks++;
-        }
-
-        // Register in spatial hash — mark all cells covered by this building's bbox
-        let mnX = Infinity, mxX = -Infinity, mnY = Infinity, mxY = -Infinity;
-        for (const pt of ring) {
-            if (isFinite(pt[0]) && isFinite(pt[1])) {
-                if (pt[0] < mnX) mnX = pt[0]; if (pt[0] > mxX) mxX = pt[0];
-                if (pt[1] < mnY) mnY = pt[1]; if (pt[1] > mxY) mxY = pt[1];
-            }
-        }
-        for (let gx = Math.floor(mnX / CELL_SIZE); gx <= Math.floor(mxX / CELL_SIZE); gx++) {
-            for (let gy = Math.floor(mnY / CELL_SIZE); gy <= Math.floor(mxY / CELL_SIZE); gy++) {
-                occupiedCells.add(`${gx},${gy}`);
-            }
         }
 
         buildingRanges.push({
@@ -316,115 +292,16 @@ self.onmessage = function (e) {
         validCount++;
     }
 
-    // ── PROCEDURAL INFILL ────────────────────────────────────────────────────
-    // Fill empty areas inside residential zones ONLY with small houses.
-    // Industrial/commercial/retail zones are skipped — they often contain open
-    // spaces (bus depots, parking lots, warehouses) with no buildings.
-    const INFILL_TYPES = new Set(['residential']);
-    const zones = features.filter(f => {
-        const p = f.properties;
-        return p?.osm_type === 'landuse' &&
-               INFILL_TYPES.has(p.landuse) &&
-               f.geometry?.type === 'Polygon';
-    });
-
-    const GRID_STEP = 18;    // metres between infill building centres
-    const INFILL_W  = 10;    // footprint width (metres)
-    const INFILL_D  = 8;     // footprint depth (metres)
-    const MAX_INFILL = 15000; // cap total infill to keep memory sane
-    let infillCount = 0;
-
-    // Simple point-in-polygon (ray casting)
-    function pointInPoly(x, y, ring) {
-        let inside = false;
-        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-            const xi = ring[i][0], yi = ring[i][1];
-            const xj = ring[j][0], yj = ring[j][1];
-            if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
-                inside = !inside;
-            }
-        }
-        return inside;
-    }
-
-    // Seeded pseudo-random for deterministic infill
-    let seed = 12345;
-    function rand() { seed = (seed * 16807 + 0) % 2147483647; return seed / 2147483647; }
-
-    for (const zone of zones) {
-        if (infillCount >= MAX_INFILL) break;
-        const ring = zone.geometry.coordinates[0];
-        if (!ring || ring.length < 4) continue;
-
-        // Zone bbox
-        let zMinX = Infinity, zMaxX = -Infinity, zMinY = Infinity, zMaxY = -Infinity;
-        for (const pt of ring) {
-            if (pt[0] < zMinX) zMinX = pt[0]; if (pt[0] > zMaxX) zMaxX = pt[0];
-            if (pt[1] < zMinY) zMinY = pt[1]; if (pt[1] > zMaxY) zMaxY = pt[1];
-        }
-
-        // Skip tiny zones
-        if ((zMaxX - zMinX) < GRID_STEP || (zMaxY - zMinY) < GRID_STEP) continue;
-
-
-
-        for (let gx = zMinX + GRID_STEP / 2; gx < zMaxX; gx += GRID_STEP) {
-            for (let gy = zMinY + GRID_STEP / 2; gy < zMaxY; gy += GRID_STEP) {
-                if (infillCount >= MAX_INFILL) break;
-
-                // Skip if a real building already occupies this cell
-                if (occupiedCells.has(hashKey(gx, gy))) continue;
-
-                // Skip if outside the zone polygon
-                if (!pointInPoly(gx, gy, ring)) continue;
-
-                // Random variation for natural look
-                const ox = (rand() - 0.5) * 6;  // ±3m position jitter
-                const oy = (rand() - 0.5) * 6;
-                const cx = gx + ox;
-                const cy = gy + oy;
-                const w = INFILL_W * (0.7 + rand() * 0.6);  // 7-13m width
-                const d = INFILL_D * (0.7 + rand() * 0.6);  // 5.6-10.4m depth
-                const h = 4 + rand() * 8;  // 4-12m (1-3 floor residential houses)
-
-                const { r, g, b } = getBuildingColor(h);
-
-                // Use simple box for infill (fast, no need for polygon extrusion)
-                const rangeStart = indices.length;
-                vertexOffset = buildBoxFallback(
-                    [[cx-w/2, cy-d/2], [cx+w/2, cy-d/2], [cx+w/2, cy+d/2], [cx-w/2, cy+d/2], [cx-w/2, cy-d/2]],
-                    h, r, g, b, positions, normals, colors, indices, vertexOffset
-                );
-
-                // Mark cell as occupied
-                occupiedCells.add(hashKey(cx, cy));
-
-                buildingRanges.push({
-                    start:        rangeStart,
-                    count:        indices.length - rangeStart,
-                    featureIndex: -1,
-                    osmId:        null,
-                    height:       h,
-                    levels:       Math.max(Math.round(h / 3.5), 1),
-                    name:         'Unmapped Building',
-                    building:     'residential',
-                });
-
-                infillCount++;
-                validCount++;
-            }
-        }
-    }
-
     const posArr = new Float32Array(positions);
     const nrmArr = new Float32Array(normals);
     const colArr = new Float32Array(colors);
     const idxArr = new Uint32Array(indices);
 
-    console.log(`[worker] ${validCount} total (${infillCount} infill), ${fallbacks} fallback, ${skipped} skipped`);
+    console.log(`[worker] ${validCount} extruded, ${fallbacks} fallback, ${skipped} skipped`);
 
     self.postMessage(
         { posArr, nrmArr, colArr, idxArr, buildingRanges, validCount, skipped },
         [posArr.buffer, nrmArr.buffer, colArr.buffer, idxArr.buffer]
     );
 };
+
