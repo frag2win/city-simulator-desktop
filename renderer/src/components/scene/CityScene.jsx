@@ -368,11 +368,14 @@ export default function CityScene() {
                 geom.setIndex(new THREE.BufferAttribute(idxArr, 1));
                 // DO NOT computeVertexNormals() — using hard normals from worker
 
+                // Material matching original buildingGeometry.js (baseline f58ced99)
                 const mat = new THREE.MeshPhongMaterial({
                     vertexColors: true,
-                    shininess: 25,
-                    specular: new THREE.Color(0x1a1a2e),
-                    side: THREE.FrontSide,
+                    flatShading: true,              // crisp per-face shading on polygons
+                    emissive: new THREE.Color(0x223344),
+                    emissiveIntensity: 0.4,
+                    shininess: 30,
+                    side: THREE.DoubleSide,          // handles any wall winding issues
                 });
                 const mesh = new THREE.Mesh(geom, mat);
                 mesh.name = 'buildings-solid';

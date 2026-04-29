@@ -70,7 +70,7 @@ function earClip(pts) {
 
     const idx = Array.from({ length: n }, (_, i) => i);
     const tris = [];
-    let safety = n * 3;
+    let safety = n * n; // more generous safety limit for complex polygons
 
     while (idx.length > 3 && safety-- > 0) {
         let found = false;
@@ -79,7 +79,13 @@ function earClip(pts) {
             const a = idx[(i - 1 + len) % len];
             const b = idx[i];
             const c = idx[(i + 1) % len];
-            if (!isConvex(pts[a], pts[b], pts[c])) continue;
+
+            // Use small epsilon for convexity — handles near-collinear edges
+            const cross = cross2D(
+                pts[b][0] - pts[a][0], pts[b][1] - pts[a][1],
+                pts[c][0] - pts[a][0], pts[c][1] - pts[a][1]
+            );
+            if (cross < 1e-10) continue; // reflex or collinear — not an ear
 
             let inside = false;
             for (let j = 0; j < len; j++) {
@@ -94,7 +100,14 @@ function earClip(pts) {
             found = true;
             break;
         }
-        if (!found) break; // degenerate
+        if (!found) {
+            // Ear-clipping stalled — fall back to fan triangulation for remainder
+            // This produces SOME triangles instead of leaving holes in the roof
+            for (let i = 1; i < idx.length - 1; i++) {
+                tris.push(idx[0], idx[i], idx[i + 1]);
+            }
+            break;
+        }
     }
     if (idx.length === 3) tris.push(idx[0], idx[1], idx[2]);
     return tris;
