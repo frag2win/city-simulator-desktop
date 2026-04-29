@@ -1,12 +1,11 @@
 """
-Terrain API endpoints — elevation grid fetching.
+Terrain API endpoints — elevation grid from local SRTM data.
 """
-import asyncio
 from fastapi import APIRouter, Header, HTTPException, Query
 from typing import Optional
 from app.core.logger import logger
 from app.schemas.city import BBox
-from app.services.elevation_client import fetch_elevation_grid
+from app.services.srtm_elevation import fetch_terrain_grid
 
 router = APIRouter()
 
@@ -28,7 +27,8 @@ async def get_terrain(
 ):
     """
     Fetch a terrain elevation grid for a bounding box.
-    Uses Open-Meteo Elevation API in the background.
+    Uses locally-cached SRTM tiles from NASA (via AWS S3).
+    No external API rate limits — tiles are downloaded once and cached forever.
     """
     from app.core.config import settings
     _verify_token(authorization, settings.token)
@@ -39,18 +39,23 @@ async def get_terrain(
     except (ValueError, Exception) as e:
         raise HTTPException(status_code=400, detail=f"Invalid bounding box: {str(e)}")
 
-    # Fetch elevation grid
+    # Determine data directory for SRTM tile cache
+    data_dir = getattr(settings, 'data_dir', '') or ''
+    if not data_dir:
+        import tempfile
+        data_dir = tempfile.gettempdir()
+
+    # Fetch elevation grid from SRTM tiles
     try:
-        # fetch_elevation_grid is already async and uses httpx, so we can await it directly.
-        # It handles batching and rate limiting internally.
-        terrain_data = await fetch_elevation_grid(
+        terrain_data = await fetch_terrain_grid(
             north=bbox_obj.north,
             south=bbox_obj.south,
             east=bbox_obj.east,
             west=bbox_obj.west,
-            resolution=resolution
+            data_dir=data_dir,
+            resolution=resolution,
         )
         return terrain_data
     except Exception as e:
         logger.error(f"Failed to fetch terrain: {e}")
-        raise HTTPException(status_code=502, detail=f"Elevation API error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"SRTM elevation error: {str(e)}")

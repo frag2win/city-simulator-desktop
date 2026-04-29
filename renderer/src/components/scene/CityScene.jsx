@@ -6,7 +6,7 @@ import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
 import { createZoneGroup } from '../../three/zoneGeometry';
 import { createRailGroup } from '../../three/railGeometry';
-import { createTerrainGroup, fetchTerrainData } from '../../three/terrainGeometry';
+import { createTerrainGroup } from '../../three/terrainGeometry';
 import { createVegetationGroup } from '../../three/vegetationGeometry';
 import { createPipelineGroup } from '../../three/pipelineGeometry';
 import { EnvironmentSimulation } from '../../three/environmentSimulation';
@@ -440,37 +440,45 @@ export default function CityScene() {
             console.log(`[CityScene] Progressive build for ${features.length} features…`);
 
             // ── Stage 0: Terrain elevation mesh ──────────────────────
+            // Uses SRTM tiles via IPC→sidecar (no rate limits, cached locally)
             try {
                 const bbox = cityData.bbox;     // [west, south, east, north]
                 const origin = cityData.metadata?.origin;
-                if (bbox && origin) {
-                    console.log('[terrain] Fetching elevation data…', JSON.stringify(bbox));
-                    const terrainData = await fetchTerrainData(bbox);
-                    console.log('[terrain] Data received, building mesh…', 
-                        'range:', terrainData.min_elevation, '–', terrainData.max_elevation);
-                    const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
-                    terrainGroup.name = 'terrain';
-                    cityGroup.add(terrainGroup);
-                    terrainGroupRef.current = terrainGroup;
+                if (bbox && origin && window.electronAPI?.loadTerrain) {
+                    // Convert bbox array to "N,S,E,W" string for IPC
+                    const bboxStr = `${bbox[3]},${bbox[1]},${bbox[2]},${bbox[0]}`;
+                    console.log('[terrain] Fetching SRTM elevation data…', bboxStr);
+                    
+                    const result = await window.electronAPI.loadTerrain(bboxStr, 48);
+                    const terrainData = result?.data || result;
+                    
+                    if (terrainData && !terrainData.error && terrainData.grid) {
+                        console.log('[terrain] Data received, building mesh…', 
+                            'range:', terrainData.min_elevation, '–', terrainData.max_elevation);
+                        const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
+                        terrainGroup.name = 'terrain';
+                        cityGroup.add(terrainGroup);
+                        terrainGroupRef.current = terrainGroup;
 
-                    // Remove the flat ground plane — terrain replaces it
-                    const ground = scene.getObjectByName('ground');
-                    if (ground) {
-                        scene.remove(ground);
-                        if (ground.geometry) ground.geometry.dispose();
-                        if (ground.material) ground.material.dispose();
-                        console.log('[terrain] Removed old flat ground plane');
+                        // Remove the flat ground plane — terrain replaces it
+                        const ground = scene.getObjectByName('ground');
+                        if (ground) {
+                            scene.remove(ground);
+                            if (ground.geometry) ground.geometry.dispose();
+                            if (ground.material) ground.material.dispose();
+                        }
+
+                        console.log('[terrain] ✓ Terrain mesh added to scene');
+                        await yieldFrame();
+                        if (cancelled) return;
+                    } else {
+                        console.warn('[terrain] IPC returned error:', terrainData?.message);
                     }
-
-                    console.log('[terrain] ✓ Terrain mesh added to scene');
-                    await yieldFrame();
-                    if (cancelled) return;
                 } else {
-                    console.warn('[terrain] Missing bbox or origin, skipping terrain', 
-                        'bbox:', bbox, 'origin:', origin);
+                    console.warn('[terrain] Skipping — missing bbox/origin/IPC');
                 }
             } catch (err) {
-                console.warn('[terrain] Failed to load elevation:', err.message || err, err);
+                console.warn('[terrain] Failed to load elevation:', err.message || err);
             }
 
             // Stage 1 (~100ms): Roads visible first
