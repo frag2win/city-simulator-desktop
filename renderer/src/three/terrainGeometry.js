@@ -1,41 +1,50 @@
 /**
- * terrainGeometry.js — Builds a wireframe terrain mesh from an elevation grid.
+ * terrainGeometry.js — Solid terrain mesh from elevation grid.
  *
- * Visual style inspired by retro-futuristic topography:
- *   • Glowing cyan wireframe grid over a dark solid under-mesh
- *   • Vertex colours shift from deep blue (valleys) → bright cyan (peaks)
- *   • Terrain sits BELOW the city (y ≤ −5) — the highest terrain point
- *     is at y = TERRAIN_Y_OFFSET and relief extends downward, capped at
- *     MAX_VERT (80) scene units.  Renders AFTER opaque city geometry
- *     (renderOrder 1) so depth testing hides it behind buildings
- *   • Vertical exaggeration adapts to the actual elevation range so flat
- *     cities still show visible topology
+ * Following ArcGIS terrain rendering approach:
+ *   • Terrain is a solid ground surface (not a wireframe overlay)
+ *   • Elevation displaces the mesh surface downward from y=0
+ *   • Buildings sit ON TOP of the terrain at y=0
+ *   • Colour gradient shows elevation: dark valleys → lighter ridges
+ *   • renderOrder=-1 so terrain always draws behind city geometry
+ *
+ * The mesh uses relative elevation: the HIGHEST point in the grid maps
+ * to y = TERRAIN_Y_OFFSET (just below buildings), everything else is lower.
+ * This ensures terrain never pokes above building foundations.
  */
 import * as THREE from 'three';
 
-// ── Colour helpers ──────────────────────────────────────────────────
-/** Lerp between two THREE.Color instances and return a new one. */
-const lerpColor = (a, b, t) => new THREE.Color().lerpColors(a, b, t);
-
-const COL_LOW = new THREE.Color(0x041830);   // deep dark blue (valleys)
-const COL_MID = new THREE.Color(0x0a6e6e);   // teal
-const COL_HIGH = new THREE.Color(0x00ffcc);   // bright cyan-green (peaks)
-
-const WIRE_COLOR = 0x00e5ff;   // main wireframe tint
-const SOLID_COLOR = 0x030a14;   // dark under-surface
+// ── Colour palette ──────────────────────────────────────────────────
+const COL_DEEP  = new THREE.Color(0x0a0e1a);  // lowest valleys — near-black
+const COL_LOW   = new THREE.Color(0x0f1a2e);  // low terrain — dark navy
+const COL_MID   = new THREE.Color(0x1a2a3a);  // mid terrain — dark blue-grey
+const COL_HIGH  = new THREE.Color(0x2a3a4a);  // high terrain — lighter grey-blue
 
 // ── Constants ───────────────────────────────────────────────────────
-const EARTH_R = 6378137;        // Earth radius for Mercator projection
-const MAX_VERT = 80;            // max scene-units of vertical relief
+const EARTH_R = 6378137;           // WGS-84 Earth radius (metres)
+const TERRAIN_Y_OFFSET = -2;       // terrain peak sits 2m below building plane
+const MAX_RELIEF = 60;             // max scene-units of vertical relief
 
 /**
- * Build a terrain group from the elevation API response and the city
- * bounding box.
+ * Lerp between colors based on a 0-1 parameter, using 4 stops.
+ */
+function terrainColor(t) {
+    if (t < 0.33) {
+        return new THREE.Color().lerpColors(COL_DEEP, COL_LOW, t / 0.33);
+    } else if (t < 0.66) {
+        return new THREE.Color().lerpColors(COL_LOW, COL_MID, (t - 0.33) / 0.33);
+    } else {
+        return new THREE.Color().lerpColors(COL_MID, COL_HIGH, (t - 0.66) / 0.34);
+    }
+}
+
+/**
+ * Build a terrain group from the elevation API response.
  *
- * @param {object} terrainData   – { grid, resolution, min_elevation, max_elevation }
- * @param {number[]} cityBbox    – [west, south, east, north]  (WGS-84)
- * @param {object} origin        – { lon, lat } (origin from cityData metadata)
- * @returns {THREE.Group}        – ready to add to the scene
+ * @param {object} terrainData  – { grid[][], resolution, min_elevation, max_elevation }
+ * @param {number[]} cityBbox   – [west, south, east, north] (WGS-84)
+ * @param {object} origin       – { lon, lat } centre of projection
+ * @returns {THREE.Group}
  */
 export function createTerrainGroup(terrainData, cityBbox, origin) {
     const { grid, resolution, min_elevation: minElev, max_elevation: maxElev } = terrainData;
@@ -44,68 +53,50 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     const originLon = origin.lon;
     const originLat = origin.lat;
     const cosLat = Math.cos(originLat * Math.PI / 180);
-
     const elevRange = maxElev - minElev;
 
-    // Adaptive vertical exaggeration → flat cities (< 20 m Δ) get amplified,
-    // but capped so the total vertical relief never exceeds MAX_VERT units.
+    // Adaptive vertical exaggeration (ArcGIS style)
     const rawExag =
-        elevRange < 5 ? 8.0 :
-            elevRange < 20 ? 4.0 :
-                elevRange < 50 ? 2.5 :
-                    elevRange < 150 ? 1.5 : 1.0;
+        elevRange < 5  ? 8.0 :
+        elevRange < 20 ? 4.0 :
+        elevRange < 50 ? 2.5 :
+        elevRange < 150 ? 1.5 : 1.0;
     const exaggeration = elevRange > 0
-        ? Math.min(rawExag, MAX_VERT / elevRange)
+        ? Math.min(rawExag, MAX_RELIEF / elevRange)
         : rawExag;
 
-    // Find the elevation at the origin (center of the grid)
-    // The grid is row 0=south to resolution-1=north, col 0=west to resolution-1=east
-    // Center is approximately at resolution/2
-    const centerIdx = Math.floor(resolution / 2);
-    const originElev = grid[centerIdx]?.[centerIdx] ?? minElev;
-
-    // Actual vertical extent in scene units.
-    const peakHeight = elevRange * exaggeration;
-
-    // ── Build BufferGeometry manually for full control ────────────
-    const verts = [];   // x, y, z  (float32 ×3)
-    const colors = [];   // r, g, b  (float32 ×3)
+    // ── Build PlaneGeometry-style mesh ──────────────────────────────
+    const verts  = [];
+    const colors = [];
     const indices = [];
 
     for (let row = 0; row < resolution; row++) {
-        const latFrac = row / (resolution - 1);       // 0 = south, 1 = north
+        const latFrac = row / (resolution - 1);
         const lat = south + latFrac * (north - south);
 
-        // Exact same projection as Python spatial_processor.py
-        // Note: Python returns y (north) extending positive, Three.js Z (north) extends negative.
-        // spatial_processor.py: y = (lat - origin_lat) * (pi/180) * R
-        // In Three.js space, Z = -y
+        // Same projection as spatial_processor.py
         const z = -((lat - originLat) * (Math.PI / 180) * EARTH_R);
 
         for (let col = 0; col < resolution; col++) {
-            const lonFrac = col / (resolution - 1);    // 0 = west, 1 = east
+            const lonFrac = col / (resolution - 1);
             const lon = west + lonFrac * (east - west);
 
-            // spatial_processor.py: x = (lon - origin_lon) * (pi/180) * R * cos(origin_lat)
             const x = (lon - originLon) * (Math.PI / 180) * EARTH_R * cosLat;
 
-            const rawElev = grid[row]?.[col] ?? 0;
-            // y is relative to originElev: origin → 0, peaks → positive, valleys → negative.
-            // This aligns the terrain exactly with the building geometry which sits at y=0.
-            const y = (rawElev - originElev) * exaggeration;
+            const rawElev = grid[row]?.[col] ?? minElev;
+            // Highest point → TERRAIN_Y_OFFSET, everything else lower
+            const y = TERRAIN_Y_OFFSET + (rawElev - maxElev) * exaggeration;
 
             verts.push(x, y, z);
 
-            // Colour gradient: low → mid → high
+            // Colour gradient based on normalized elevation
             const t = elevRange > 0 ? (rawElev - minElev) / elevRange : 0;
-            const c = t < 0.5
-                ? lerpColor(COL_LOW, COL_MID, t * 2)
-                : lerpColor(COL_MID, COL_HIGH, (t - 0.5) * 2);
+            const c = terrainColor(t);
             colors.push(c.r, c.g, c.b);
         }
     }
 
-    // Triangle indices
+    // Triangle indices (two triangles per grid cell)
     for (let row = 0; row < resolution - 1; row++) {
         for (let col = 0; col < resolution - 1; col++) {
             const a = row * resolution + col;
@@ -123,50 +114,34 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
 
-    // ── Meshes ───────────────────────────────────────────────────
+    // ── Solid terrain surface ───────────────────────────────────────
     const group = new THREE.Group();
     group.name = 'terrain';
 
-    // 1. Solid under-surface for depth / shadow
+    // Main solid surface — opaque, receives shadows, no wireframe
     const solidMat = new THREE.MeshPhongMaterial({
-        color: SOLID_COLOR,
         vertexColors: true,
-        transparent: true,
-        opacity: 0.45,
+        flatShading: false,        // smooth interpolation for natural terrain
+        shininess: 5,
         side: THREE.DoubleSide,
-        depthWrite: false,       // don't occlude buildings/roads
-        shininess: 10,
+        depthWrite: true,
     });
     const solidMesh = new THREE.Mesh(geometry, solidMat);
-    solidMesh.renderOrder = 1;   // draw after opaque city geometry (uses depth to hide behind buildings)
+    solidMesh.receiveShadow = true;
+    solidMesh.renderOrder = -1;    // draw BEFORE buildings/roads
     group.add(solidMesh);
 
-    // 2. Wireframe overlay (the signature glowing grid)
-    const wireMat = new THREE.MeshBasicMaterial({
-        color: WIRE_COLOR,
+    // Subtle edge lines for grid visibility (very faint)
+    const edgeMat = new THREE.MeshBasicMaterial({
+        color: 0x1a2a3a,
         wireframe: true,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.08,
         depthWrite: false,
     });
-    const wireMesh = new THREE.Mesh(geometry.clone(), wireMat);
-    wireMesh.renderOrder = 1;
-    group.add(wireMesh);
-
-    // 3. Edge glow — slightly thicker bright lines at the very top
-    if (elevRange > 2) {
-        const glowMat = new THREE.MeshBasicMaterial({
-            color: 0x00ffd5,
-            wireframe: true,
-            transparent: true,
-            opacity: 0.15,
-            depthWrite: false,
-        });
-        const glowMesh = new THREE.Mesh(geometry.clone(), glowMat);
-        glowMesh.scale.set(1, 1.005, 1);   // slight offset to avoid z-fight
-        glowMesh.renderOrder = 1;
-        group.add(glowMesh);
-    }
+    const edgeMesh = new THREE.Mesh(geometry.clone(), edgeMat);
+    edgeMesh.renderOrder = -1;
+    group.add(edgeMesh);
 
     return group;
 }

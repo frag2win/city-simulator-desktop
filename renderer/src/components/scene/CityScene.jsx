@@ -6,6 +6,7 @@ import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
 import { createZoneGroup } from '../../three/zoneGeometry';
 import { createRailGroup } from '../../three/railGeometry';
+import { createTerrainGroup } from '../../three/terrainGeometry';
 import { createVegetationGroup } from '../../three/vegetationGeometry';
 import { createPipelineGroup } from '../../three/pipelineGeometry';
 import { EnvironmentSimulation } from '../../three/environmentSimulation';
@@ -29,6 +30,7 @@ export default function CityScene() {
     const controlsRef = useRef(null);
     const animationRef = useRef(null);
     const cityGroupRef = useRef(null);
+    const terrainGroupRef = useRef(null);
     const lastTimeRef = useRef(performance.now());
 
     // Simulation refs
@@ -59,7 +61,7 @@ export default function CityScene() {
         return unsub;
     }, []);
 
-    const { cityData, layers, isXRayMode, setSelectedEntity, setTimeOfDay, setAgentCounts } = useCityStore();
+    const { cityData, terrainData, layers, isXRayMode, setSelectedEntity, setTimeOfDay, setAgentCounts } = useCityStore();
 
     const initScene = useCallback(() => {
         if (!containerRef.current) return;
@@ -643,6 +645,8 @@ export default function CityScene() {
         const p = g.getObjectByName('pipelines');
         if (p) p.visible = layers.pipelines;
 
+        if (terrainGroupRef.current) terrainGroupRef.current.visible = !!layers.terrain;
+
         if (heatmapRef.current) heatmapRef.current.setVisible(!!layers.heatmap);
         if (envSimRef.current) envSimRef.current.setVisible(!!layers.environment);
     }, [layers]);
@@ -686,6 +690,34 @@ export default function CityScene() {
         }
         
     }, [isXRayMode]);
+
+    // Terrain rendering effect
+    useEffect(() => {
+        if (!sceneReady || !sceneRef.current || !terrainData || !cityData?.metadata?.origin) return;
+
+        const scene = sceneRef.current;
+        const origin = cityData.metadata.origin;
+        const bbox = cityData.bbox;
+
+        if (terrainGroupRef.current) {
+            scene.remove(terrainGroupRef.current);
+            disposeGroup(terrainGroupRef.current);
+        }
+
+        const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
+        terrainGroup.visible = !!layers.terrain;
+        scene.add(terrainGroup);
+        terrainGroupRef.current = terrainGroup;
+
+        // BUG Fix 3: Adjust ground plane based on terrainMinY to avoid dark band gaps
+        const ground = scene.getObjectByName('ground');
+        if (ground) {
+            const box = new THREE.Box3().setFromObject(terrainGroup);
+            // set ground just below the lowest terrain point
+            ground.position.y = Math.min(-1, box.min.y - 5);
+        }
+
+    }, [terrainData, cityData, sceneReady]);
 
     function disposeGroup(group) {
         group.traverse((obj) => {

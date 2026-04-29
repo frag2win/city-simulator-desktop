@@ -85,6 +85,34 @@ function registerCityHandlers(ipcMain) {
         }
     });
 
+    // terrain:load — Request elevation grid for a bounding box
+    ipcMain.handle('terrain:load', async (_event, { bbox, resolution = 48 }) => {
+        try {
+            return await fetchWithRetry(async (port, token) => {
+                logger.info('Loading terrain data', { bbox, resolution });
+                const url = `http://127.0.0.1:${port}/terrain?bbox=${encodeURIComponent(bbox)}&resolution=${resolution}`;
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    signal: AbortSignal.timeout(120000), // 120s for elevation grid
+                });
+
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    const detail = body.detail || `Engine returned error ${response.status}`;
+                    logger.error('Terrain load failed', { status: response.status, detail });
+                    return { error: true, message: detail };
+                }
+
+                const terrainData = await response.json();
+                logger.info('Terrain data loaded', { resolution: terrainData.resolution });
+                return { error: false, data: terrainData };
+            }, 'terrain:load');
+        } catch (err) {
+            logger.error('Terrain load failed after retries', { error: err.message });
+            return { error: true, message: err.message || 'Unknown error loading terrain' };
+        }
+    });
+
     // city:cache:list — List cached cities
     ipcMain.handle('city:cache:list', async () => {
         try {

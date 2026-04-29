@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import useCityStore from '../../store/cityStore';
-import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon, WaterIcon, TrainIcon, ZoneIcon, TreeIcon, PipelineIcon, XRayIcon, CloudIcon } from './Icons';
+import { BuildingIcon, RoadIcon, PinIcon, HeatmapIcon, WaterIcon, TrainIcon, ZoneIcon, TreeIcon, PipelineIcon, XRayIcon, CloudIcon, TerrainIcon } from './Icons';
 
 export default function LayerToggles() {
     const { layers, isXRayMode, toggleLayer, toggleXRayMode } = useCityStore();
@@ -24,6 +24,13 @@ export default function LayerToggles() {
                 title="Toggle roads"
             >
                 <RoadIcon />
+            </button>
+            <button
+                className={`layer-toggle ${layers.terrain ? 'active' : ''}`}
+                onClick={() => toggleLayer('terrain')}
+                title="Toggle terrain elevation"
+            >
+                <TerrainIcon />
             </button>
             <button
                 className={`layer-toggle ${layers.amenities ? 'active' : ''}`}

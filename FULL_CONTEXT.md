@@ -2,7 +2,7 @@
 
 The **City Simulator Desktop** is a cross-platform Electron application that transforms raw OpenStreetMap (OSM) data into interactive, 3D urban environments in real-time. It features a React/Three.js frontend for high-performance rendering and a Python/FastAPI sidecar engine for heavy geospatial processing. It is designed for urban planners, simulation enthusiasts, and developers needing a lightweight desktop tool to visualize and simulate city-scale data.
 
-**Current Phase:** Phase 2/3 (Core geometry rendering and caching are implemented; advanced simulation elements like environment/vegetation are actively being added based on code comments).
+**Current Phase:** Phase 6 (Terrain Elevation Rendering is implemented; subsurface utilities and environment overlays are complete).
 
 **Known Limitations & Constraints:**
 - Depends heavily on the external Overpass API, which is subject to rate limiting and slow responses for large bounding boxes.
@@ -32,7 +32,8 @@ city-simulator-desktop/
 │   │   ├── main.py                      [CRITICAL] FastAPI entry point, configures middleware and routes.
 │   │   ├── api/
 │   │   │   ├── city.py                  [CRITICAL] Endpoints for querying/caching OSM data.
-│   │   │   └── health.py                [CRITICAL] Sidecar health check endpoint.
+│   │   │   ├── health.py                [CRITICAL] Sidecar health check endpoint.
+│   │   │   └── terrain.py               [CRITICAL] Endpoints for elevation grid fetching.
 │   │   ├── core/
 │   │   │   ├── config.py                [CONFIG] Pydantic settings management.
 │   │   │   └── logger.py                [CONFIG] Python logging configuration.
@@ -83,7 +84,8 @@ city-simulator-desktop/
 │           ├── lodManager.js            [CRITICAL] Manages Level-of-Detail for performance.
 │           ├── pipelineGeometry.js      [CRITICAL] Renders pipelines/utilities.
 │           ├── roadGraph.js             [CRITICAL] [INFERRED] Graph data structure for pathfinding.
-│           ├── terrainGeometry.js       [CRITICAL] [INFERRED] Renders elevation terrain.
+├── terrainGeometry.js       [CRITICAL] Renders elevation terrain.
+
 │           ├── vegetationGeometry.js    [CRITICAL] Renders trees and parks.
 │           ├── environmentSimulation.js [CRITICAL] Handles wind/AQI visual effects.
 │           └── workers/
@@ -118,6 +120,7 @@ city-simulator-desktop/
 | `city:load` | Render ↔ Main | `{bbox: string}` → `{error: boolean, data?: object, message?: string}` | Fetch city GeoJSON |
 | `city:cache:list` | Render ↔ Main | None → `Array<CacheEntry>` | Get list of downloaded cities |
 | `city:cache:delete` | Render ↔ Main | `{cacheId: number}` → `boolean` | Delete local cache |
+| `terrain:load` | Render ↔ Main | `{bbox: string, resolution: number}` → `{error: boolean, data?: object}` | Fetch elevation grid |
 | `simulation:start` | Render ↔ Main | `{config: object}` | [INFERRED] Start backend simulation |
 | `simulation:event` | Render ↔ Main | `{type: string, data: object}` | [INFERRED] Send interactive event |
 | `file:export` | Render ↔ Main | `{format: string, data: object, cityName: string}` | Export city to disk |
@@ -426,4 +429,4 @@ interface CityStore {
 - "Do not block the React main thread with geometry generation. Use the progressive `yieldFrame` pattern in `CityScene.jsx` or Web Workers."
 
 ## Last Updated
-2026-04-28 — Comprehensive architectural analysis of Phase 2/3 city simulator implementation.
+2026-04-29 — Integrated Phase 6 Terrain Elevation Rendering; updated IPC and API documentation.

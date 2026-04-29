@@ -8,6 +8,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 const useCityStore = create(subscribeWithSelector((set, get) => ({
     // ─── City Data ───────────────────────────
     cityData: null,        // GeoJSON FeatureCollection (projected)
+    terrainData: null,     // Elevation grid data
     cityName: '',
     isLoading: false,
     error: null,
@@ -40,6 +41,7 @@ const useCityStore = create(subscribeWithSelector((set, get) => ({
         zones: true,
         vegetation: true,
         pipelines: true,
+        terrain: true,
         environment: false,
         heatmap: false,
     },
@@ -124,9 +126,26 @@ const useCityStore = create(subscribeWithSelector((set, get) => ({
             setCityData(result.data || result);
 
             // Kick off terrain loading in the background
-            // get().loadTerrain(bbox); // TODO: Phase 3
+            get().loadTerrain(bbox);
         } catch (err) {
             setError(err.message || 'Unknown error loading city');
+        }
+    },
+
+    /**
+     * Load terrain elevation data via IPC.
+     */
+    loadTerrain: async (bbox) => {
+        try {
+            const api = window.electronAPI;
+            if (!api?.loadTerrain) return;
+
+            const result = await api.loadTerrain(bbox);
+            if (result && !result.error) {
+                set({ terrainData: result.data || result });
+            }
+        } catch {
+            // silently ignore terrain errors
         }
     },
 
