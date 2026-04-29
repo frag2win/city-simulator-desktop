@@ -317,9 +317,10 @@ self.onmessage = function (e) {
     }
 
     // ── PROCEDURAL INFILL ────────────────────────────────────────────────────
-    // Fill empty areas inside residential/commercial zones with small buildings.
-    // These represent unmapped houses/shops that exist in reality.
-    const INFILL_TYPES = new Set(['residential', 'commercial', 'retail', 'industrial']);
+    // Fill empty areas inside residential zones ONLY with small houses.
+    // Industrial/commercial/retail zones are skipped — they often contain open
+    // spaces (bus depots, parking lots, warehouses) with no buildings.
+    const INFILL_TYPES = new Set(['residential']);
     const zones = features.filter(f => {
         const p = f.properties;
         return p?.osm_type === 'landuse' &&
@@ -365,7 +366,7 @@ self.onmessage = function (e) {
         // Skip tiny zones
         if ((zMaxX - zMinX) < GRID_STEP || (zMaxY - zMinY) < GRID_STEP) continue;
 
-        const isResidential = zone.properties.landuse === 'residential';
+
 
         for (let gx = zMinX + GRID_STEP / 2; gx < zMaxX; gx += GRID_STEP) {
             for (let gy = zMinY + GRID_STEP / 2; gy < zMaxY; gy += GRID_STEP) {
@@ -384,9 +385,7 @@ self.onmessage = function (e) {
                 const cy = gy + oy;
                 const w = INFILL_W * (0.7 + rand() * 0.6);  // 7-13m width
                 const d = INFILL_D * (0.7 + rand() * 0.6);  // 5.6-10.4m depth
-                const h = isResidential
-                    ? 4 + rand() * 8        // 4-12m (1-3 floors)
-                    : 6 + rand() * 14;      // 6-20m (2-6 floors)
+                const h = 4 + rand() * 8;  // 4-12m (1-3 floor residential houses)
 
                 const { r, g, b } = getBuildingColor(h);
 
@@ -408,7 +407,7 @@ self.onmessage = function (e) {
                     height:       h,
                     levels:       Math.max(Math.round(h / 3.5), 1),
                     name:         'Unmapped Building',
-                    building:     isResidential ? 'residential' : 'commercial',
+                    building:     'residential',
                 });
 
                 infillCount++;
