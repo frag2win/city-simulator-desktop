@@ -147,15 +147,19 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     const cosLat = Math.cos(originLat * Math.PI / 180);
     const elevRange = maxElev - minElev;
 
-    // Adaptive vertical exaggeration (ArcGIS-inspired)
+    // Adaptive vertical exaggeration — must be high enough to see at city scale
+    // City spans ~5000-10000 scene units, so we need hundreds of units of relief
     const rawExag =
-        elevRange < 5   ? 8.0 :
-        elevRange < 20  ? 4.0 :
-        elevRange < 50  ? 2.5 :
-        elevRange < 150 ? 1.5 : 1.0;
-    const exaggeration = elevRange > 0
-        ? Math.min(rawExag, MAX_RELIEF / elevRange)
-        : rawExag;
+        elevRange < 5   ? 50.0 :    // nearly flat: extreme exaggeration
+        elevRange < 20  ? 25.0 :    // gentle: high exaggeration
+        elevRange < 50  ? 15.0 :    // moderate hills
+        elevRange < 150 ? 8.0  :    // hilly
+        elevRange < 500 ? 4.0  :    // mountainous
+        2.0;                        // extreme mountains
+    const exaggeration = rawExag;
+
+    console.log(`[terrain] Exaggeration: ${exaggeration}x, range: ${elevRange}m, ` +
+        `visual relief: ${(elevRange * exaggeration).toFixed(0)} scene units`);
 
     // ── Build vertices ──────────────────────────────────────────────
     const verts  = [];
@@ -163,6 +167,7 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     const indices = [];
 
     const isFlat = elevRange < 1;  // less than 1m elevation change
+    const midElev = (minElev + maxElev) / 2;  // center elevation
 
     for (let row = 0; row < resolution; row++) {
         const latFrac = row / (resolution - 1);   // 0=south, 1=north
@@ -178,7 +183,8 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
             const x = (lon - originLon) * (Math.PI / 180) * EARTH_R * cosLat;
 
             const rawElev = grid[row]?.[col] ?? minElev;
-            // Peak → TERRAIN_Y_OFFSET, everything else lower
+            // Highest point → TERRAIN_Y_OFFSET (just below buildings at y=0)
+            // Everything else drops DOWN from there
             const y = TERRAIN_Y_OFFSET + (rawElev - maxElev) * exaggeration;
 
             verts.push(x, y, z);

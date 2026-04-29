@@ -353,7 +353,7 @@ export default function CityScene() {
     }
 
     // FIX 0b: Build buildings in a Web Worker — non-blocking, zero-copy buffer transfer
-    function buildBuildingsAsync(features) {
+    function buildBuildingsAsync(features, terrainInfo) {
         return new Promise((resolve) => {
             const worker = new Worker(
                 new URL('../../three/workers/buildingWorker.js', import.meta.url),
@@ -402,7 +402,7 @@ export default function CityScene() {
                 worker.terminate();
                 resolve(group);
             };
-            worker.postMessage({ features });
+            worker.postMessage({ features, terrainInfo });
         });
     }
 
@@ -441,6 +441,7 @@ export default function CityScene() {
 
             // ── Stage 0: Terrain elevation mesh ──────────────────────
             // Uses SRTM tiles via IPC→sidecar (no rate limits, cached locally)
+            let terrainInfo = null;  // shared with building worker for Y-offset
             try {
                 const bbox = cityData.bbox;     // [west, south, east, north]
                 const origin = cityData.metadata?.origin;
@@ -468,7 +469,25 @@ export default function CityScene() {
                             if (ground.material) ground.material.dispose();
                         }
 
-                        console.log('[terrain] ✓ Terrain mesh added to scene');
+                        // Store terrain info for building/road Y-offset calculations
+                        const elevRange = terrainData.max_elevation - terrainData.min_elevation;
+                        const exaggeration =
+                            elevRange < 5   ? 50.0 :
+                            elevRange < 20  ? 25.0 :
+                            elevRange < 50  ? 15.0 :
+                            elevRange < 150 ? 8.0  :
+                            elevRange < 500 ? 4.0  : 2.0;
+                        terrainInfo = {
+                            grid: terrainData.grid,
+                            resolution: terrainData.resolution,
+                            minElev: terrainData.min_elevation,
+                            maxElev: terrainData.max_elevation,
+                            bbox: bbox,           // [west, south, east, north]
+                            origin: origin,       // { lon, lat } — same as terrain mesh
+                            exaggeration,
+                            terrainYOffset: -0.5,  // must match TERRAIN_Y_OFFSET
+                        };
+                        console.log('[terrain] ✓ Terrain mesh added, terrainInfo stored for buildings');
                         await yieldFrame();
                         if (cancelled) return;
                     } else {
@@ -502,7 +521,7 @@ export default function CityScene() {
             if (cancelled) return;
 
             // Stage 2: Buildings via worker (started concurrently — resolves in ~1-2s)
-            const buildingsPromise = buildBuildingsAsync(features);
+            const buildingsPromise = buildBuildingsAsync(features, terrainInfo);
 
             // Stage 3: Secondary layers while worker builds buildings
             const railways = createRailGroup(features);
