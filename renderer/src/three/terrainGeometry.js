@@ -18,25 +18,28 @@ import * as THREE from 'three';
 
 // ── Constants ───────────────────────────────────────────────────────
 const EARTH_R = 6378137;           // WGS-84 Earth radius (metres)
-const TERRAIN_Y_OFFSET = -2;       // peak sits 2m below building plane
+const TERRAIN_Y_OFFSET = -0.5;     // peak sits 0.5m below building plane
 const MAX_RELIEF = 60;             // max scene-units vertical relief
 
-// ── Colour palette (dark, doesn't compete with buildings) ───────────
-const COL_DEEP = new THREE.Color(0x060a14);  // deepest valleys
-const COL_LOW  = new THREE.Color(0x0c1422);  // low ground
-const COL_MID  = new THREE.Color(0x141e2e);  // mid elevation
-const COL_HIGH = new THREE.Color(0x1e2e3e);  // ridges/peaks
+// ── Terrain colour palette ──────────────────────────────────────────
+const COL_DEEP = new THREE.Color(0x0a1a12);  // deep valleys — dark teal
+const COL_LOW  = new THREE.Color(0x122a1a);  // low terrain — forest
+const COL_MID  = new THREE.Color(0x1a3020);  // mid elevation — muted green
+const COL_HIGH = new THREE.Color(0x263828);  // ridges/peaks — lighter green
+const COL_FLAT = new THREE.Color(0x0e1e14);  // uniform color for flat terrain
 
-function terrainColor(t) {
+function terrainColor(t, isFlat) {
+    if (isFlat) return COL_FLAT.clone();
     if (t < 0.33) return new THREE.Color().lerpColors(COL_DEEP, COL_LOW, t / 0.33);
     if (t < 0.66) return new THREE.Color().lerpColors(COL_LOW, COL_MID, (t - 0.33) / 0.33);
     return new THREE.Color().lerpColors(COL_MID, COL_HIGH, (t - 0.66) / 0.34);
 }
 
 // ── Grid size for terrain mesh ──────────────────────────────────────
-const GRID_SIZE = 64;
+const GRID_SIZE = 48;              // 48×48 = 2304 points, ~24 API calls
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/elevation';
 const BATCH_SIZE = 100;
+const BATCH_DELAY_MS = 200;        // polite delay between API requests
 
 /**
  * Fetch elevation grid directly from Open-Meteo API (no sidecar needed).
@@ -100,6 +103,11 @@ export async function fetchTerrainData(bbox) {
             console.warn(`[terrain] Batch ${i} failed:`, err.message);
             elevations.push(...new Array(batch.length).fill(lastValid));
         }
+
+        // Polite delay between batches to avoid 429 rate limiting
+        if (i + BATCH_SIZE < points.length) {
+            await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+        }
     }
 
     // Reshape into 2D grid (row 0 = south, row N-1 = north)
@@ -154,6 +162,8 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     const colors = [];
     const indices = [];
 
+    const isFlat = elevRange < 1;  // less than 1m elevation change
+
     for (let row = 0; row < resolution; row++) {
         const latFrac = row / (resolution - 1);   // 0=south, 1=north
         const lat = south + latFrac * (north - south);
@@ -174,8 +184,8 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
             verts.push(x, y, z);
 
             // Colour by normalized elevation
-            const t = elevRange > 0 ? (rawElev - minElev) / elevRange : 0;
-            const c = terrainColor(t);
+            const t = elevRange > 0 ? (rawElev - minElev) / elevRange : 0.5;
+            const c = terrainColor(t, isFlat);
             colors.push(c.r, c.g, c.b);
         }
     }
@@ -206,7 +216,8 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     const solidMat = new THREE.MeshPhongMaterial({
         vertexColors: true,
         flatShading: false,      // smooth for natural terrain look
-        shininess: 5,
+        shininess: 10,
+        emissive: new THREE.Color(0x0a150a),  // slight green self-glow
         side: THREE.DoubleSide,
         depthWrite: true,
     });
@@ -215,12 +226,12 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     solidMesh.renderOrder = -1;   // draw BEFORE buildings
     group.add(solidMesh);
 
-    // Very subtle grid lines (barely visible)
+    // Subtle grid lines for depth perception
     const edgeMat = new THREE.MeshBasicMaterial({
-        color: 0x1a2a3a,
+        color: 0x2a4a3a,
         wireframe: true,
         transparent: true,
-        opacity: 0.06,
+        opacity: 0.12,
         depthWrite: false,
     });
     const edgeMesh = new THREE.Mesh(geometry.clone(), edgeMat);

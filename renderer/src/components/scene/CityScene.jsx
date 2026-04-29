@@ -439,6 +439,40 @@ export default function CityScene() {
 
             console.log(`[CityScene] Progressive build for ${features.length} features…`);
 
+            // ── Stage 0: Terrain elevation mesh ──────────────────────
+            try {
+                const bbox = cityData.bbox;     // [west, south, east, north]
+                const origin = cityData.metadata?.origin;
+                if (bbox && origin) {
+                    console.log('[terrain] Fetching elevation data…', JSON.stringify(bbox));
+                    const terrainData = await fetchTerrainData(bbox);
+                    console.log('[terrain] Data received, building mesh…', 
+                        'range:', terrainData.min_elevation, '–', terrainData.max_elevation);
+                    const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
+                    terrainGroup.name = 'terrain';
+                    cityGroup.add(terrainGroup);
+                    terrainGroupRef.current = terrainGroup;
+
+                    // Remove the flat ground plane — terrain replaces it
+                    const ground = scene.getObjectByName('ground');
+                    if (ground) {
+                        scene.remove(ground);
+                        if (ground.geometry) ground.geometry.dispose();
+                        if (ground.material) ground.material.dispose();
+                        console.log('[terrain] Removed old flat ground plane');
+                    }
+
+                    console.log('[terrain] ✓ Terrain mesh added to scene');
+                    await yieldFrame();
+                    if (cancelled) return;
+                } else {
+                    console.warn('[terrain] Missing bbox or origin, skipping terrain', 
+                        'bbox:', bbox, 'origin:', origin);
+                }
+            } catch (err) {
+                console.warn('[terrain] Failed to load elevation:', err.message || err, err);
+            }
+
             // Stage 1 (~100ms): Roads visible first
             const roads = createRoadGroup(features);
             roads.name = 'roads';
@@ -690,50 +724,6 @@ export default function CityScene() {
         }
         
     }, [isXRayMode]);
-
-    // Terrain rendering effect — fetches elevation directly from Open-Meteo API
-    useEffect(() => {
-        if (!sceneReady || !sceneRef.current || !cityData?.metadata?.origin || !cityData?.bbox) return;
-
-        const scene = sceneRef.current;
-        const origin = cityData.metadata.origin;
-        const bbox = cityData.bbox;  // [west, south, east, north]
-        let cancelled = false;
-
-        (async () => {
-            try {
-                console.log('[terrain] Starting elevation fetch for bbox:', bbox);
-                const terrainData = await fetchTerrainData(bbox);
-
-                if (cancelled) return;
-
-                // Remove previous terrain
-                if (terrainGroupRef.current) {
-                    scene.remove(terrainGroupRef.current);
-                    disposeGroup(terrainGroupRef.current);
-                }
-
-                const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
-                terrainGroup.visible = !!layers.terrain;
-                scene.add(terrainGroup);
-                terrainGroupRef.current = terrainGroup;
-
-                // Adjust ground plane to sit below terrain
-                const ground = scene.getObjectByName('ground');
-                if (ground) {
-                    const box = new THREE.Box3().setFromObject(terrainGroup);
-                    ground.position.y = Math.min(-1, box.min.y - 5);
-                }
-
-                console.log('[terrain] Terrain mesh added to scene');
-            } catch (err) {
-                console.warn('[terrain] Failed to load elevation:', err.message);
-                // Fallback: keep existing flat ground — city still works fine
-            }
-        })();
-
-        return () => { cancelled = true; };
-    }, [cityData, sceneReady]);
 
     function disposeGroup(group) {
         group.traverse((obj) => {
