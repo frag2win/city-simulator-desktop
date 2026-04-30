@@ -18,7 +18,7 @@ import * as THREE from 'three';
 
 // ── Constants ───────────────────────────────────────────────────────
 const EARTH_R = 6378137;           // WGS-84 Earth radius (metres)
-const TERRAIN_Y_OFFSET = -0.5;     // peak sits 0.5m below building plane
+const TERRAIN_Y_OFFSET = -1;       // peak sits 1m below building plane (y=0)
 const MAX_RELIEF = 60;             // max scene-units vertical relief
 
 // ── Terrain colour palette ──────────────────────────────────────────
@@ -147,18 +147,15 @@ export function createTerrainGroup(terrainData, cityBbox, origin) {
     const cosLat = Math.cos(originLat * Math.PI / 180);
     const elevRange = maxElev - minElev;
 
-    // Adaptive vertical exaggeration — must be high enough to see at city scale
-    // City spans ~5000-10000 scene units, so we need hundreds of units of relief
-    const rawExag =
-        elevRange < 5   ? 50.0 :    // nearly flat: extreme exaggeration
-        elevRange < 20  ? 25.0 :    // gentle: high exaggeration
-        elevRange < 50  ? 15.0 :    // moderate hills
-        elevRange < 150 ? 8.0  :    // hilly
-        elevRange < 500 ? 4.0  :    // mountainous
-        2.0;                        // extreme mountains
-    const exaggeration = rawExag;
+    // Subtle exaggeration — terrain sits just below buildings (y=0)
+    // Buildings stay at y=0, terrain peak at TERRAIN_Y_OFFSET (-1)
+    // Keep relief subtle so buildings don't need per-building offsets
+    const TARGET_RELIEF = 15;   // max scene-units of vertical displacement
+    const exaggeration = elevRange > 0
+        ? Math.min(TARGET_RELIEF / elevRange, 6.0)
+        : 0;
 
-    console.log(`[terrain] Exaggeration: ${exaggeration}x, range: ${elevRange}m, ` +
+    console.log(`[terrain] Exaggeration: ${exaggeration.toFixed(2)}x, range: ${elevRange}m, ` +
         `visual relief: ${(elevRange * exaggeration).toFixed(0)} scene units`);
 
     // ── Build vertices ──────────────────────────────────────────────

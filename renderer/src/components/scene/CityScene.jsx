@@ -6,7 +6,7 @@ import { createWaterGroup } from '../../three/waterGeometry';
 import { createAmenityGroup } from '../../three/amenityGeometry';
 import { createZoneGroup } from '../../three/zoneGeometry';
 import { createRailGroup } from '../../three/railGeometry';
-import { createTerrainGroup } from '../../three/terrainGeometry';
+// terrain import removed — will be reworked in a future sprint
 import { createVegetationGroup } from '../../three/vegetationGeometry';
 import { createPipelineGroup } from '../../three/pipelineGeometry';
 import { EnvironmentSimulation } from '../../three/environmentSimulation';
@@ -30,7 +30,7 @@ export default function CityScene() {
     const controlsRef = useRef(null);
     const animationRef = useRef(null);
     const cityGroupRef = useRef(null);
-    const terrainGroupRef = useRef(null);
+    // terrainGroupRef removed — terrain will be reworked
     const lastTimeRef = useRef(performance.now());
 
     // Simulation refs
@@ -353,7 +353,7 @@ export default function CityScene() {
     }
 
     // FIX 0b: Build buildings in a Web Worker — non-blocking, zero-copy buffer transfer
-    function buildBuildingsAsync(features, terrainInfo) {
+    function buildBuildingsAsync(features) {
         return new Promise((resolve) => {
             const worker = new Worker(
                 new URL('../../three/workers/buildingWorker.js', import.meta.url),
@@ -402,7 +402,7 @@ export default function CityScene() {
                 worker.terminate();
                 resolve(group);
             };
-            worker.postMessage({ features, terrainInfo });
+            worker.postMessage({ features });
         });
     }
 
@@ -439,66 +439,8 @@ export default function CityScene() {
 
             console.log(`[CityScene] Progressive build for ${features.length} features…`);
 
-            // ── Stage 0: Terrain elevation mesh ──────────────────────
-            // Uses SRTM tiles via IPC→sidecar (no rate limits, cached locally)
-            let terrainInfo = null;  // shared with building worker for Y-offset
-            try {
-                const bbox = cityData.bbox;     // [west, south, east, north]
-                const origin = cityData.metadata?.origin;
-                if (bbox && origin && window.electronAPI?.loadTerrain) {
-                    // Convert bbox array to "N,S,E,W" string for IPC
-                    const bboxStr = `${bbox[3]},${bbox[1]},${bbox[2]},${bbox[0]}`;
-                    console.log('[terrain] Fetching SRTM elevation data…', bboxStr);
-                    
-                    const result = await window.electronAPI.loadTerrain(bboxStr, 48);
-                    const terrainData = result?.data || result;
-                    
-                    if (terrainData && !terrainData.error && terrainData.grid) {
-                        console.log('[terrain] Data received, building mesh…', 
-                            'range:', terrainData.min_elevation, '–', terrainData.max_elevation);
-                        const terrainGroup = createTerrainGroup(terrainData, bbox, origin);
-                        terrainGroup.name = 'terrain';
-                        cityGroup.add(terrainGroup);
-                        terrainGroupRef.current = terrainGroup;
-
-                        // Remove the flat ground plane — terrain replaces it
-                        const ground = scene.getObjectByName('ground');
-                        if (ground) {
-                            scene.remove(ground);
-                            if (ground.geometry) ground.geometry.dispose();
-                            if (ground.material) ground.material.dispose();
-                        }
-
-                        // Store terrain info for building/road Y-offset calculations
-                        const elevRange = terrainData.max_elevation - terrainData.min_elevation;
-                        const exaggeration =
-                            elevRange < 5   ? 50.0 :
-                            elevRange < 20  ? 25.0 :
-                            elevRange < 50  ? 15.0 :
-                            elevRange < 150 ? 8.0  :
-                            elevRange < 500 ? 4.0  : 2.0;
-                        terrainInfo = {
-                            grid: terrainData.grid,
-                            resolution: terrainData.resolution,
-                            minElev: terrainData.min_elevation,
-                            maxElev: terrainData.max_elevation,
-                            bbox: bbox,           // [west, south, east, north]
-                            origin: origin,       // { lon, lat } — same as terrain mesh
-                            exaggeration,
-                            terrainYOffset: -0.5,  // must match TERRAIN_Y_OFFSET
-                        };
-                        console.log('[terrain] ✓ Terrain mesh added, terrainInfo stored for buildings');
-                        await yieldFrame();
-                        if (cancelled) return;
-                    } else {
-                        console.warn('[terrain] IPC returned error:', terrainData?.message);
-                    }
-                } else {
-                    console.warn('[terrain] Skipping — missing bbox/origin/IPC');
-                }
-            } catch (err) {
-                console.warn('[terrain] Failed to load elevation:', err.message || err);
-            }
+            // Stage 0: Terrain — DISABLED (will be reworked in future sprint)
+            // See GitHub issue for terrain rework plan
 
             // Stage 1 (~100ms): Roads visible first
             const roads = createRoadGroup(features);
@@ -521,7 +463,7 @@ export default function CityScene() {
             if (cancelled) return;
 
             // Stage 2: Buildings via worker (started concurrently — resolves in ~1-2s)
-            const buildingsPromise = buildBuildingsAsync(features, terrainInfo);
+            const buildingsPromise = buildBuildingsAsync(features);
 
             // Stage 3: Secondary layers while worker builds buildings
             const railways = createRailGroup(features);
@@ -706,7 +648,7 @@ export default function CityScene() {
         const p = g.getObjectByName('pipelines');
         if (p) p.visible = layers.pipelines;
 
-        if (terrainGroupRef.current) terrainGroupRef.current.visible = !!layers.terrain;
+        // terrain layer toggle disabled — terrain will be reworked
 
         if (heatmapRef.current) heatmapRef.current.setVisible(!!layers.heatmap);
         if (envSimRef.current) envSimRef.current.setVisible(!!layers.environment);

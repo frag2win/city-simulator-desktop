@@ -117,7 +117,7 @@ function earClip(pts) {
 // Builds roof (triangulated polygon) + wall quads per edge.
 // Returns updated vertexOffset.
 
-function extrudePolygon(ring, height, r, g, bCol, positions, normals, colors, indices, vertexOffset, yOffset = 0) {
+function extrudePolygon(ring, height, r, g, bCol, positions, normals, colors, indices, vertexOffset) {
     // Prepare 2D polygon — remove closing duplicate
     let pts = ring.map(p => [p[0], p[1]]);
     if (pts.length > 1 &&
@@ -156,7 +156,7 @@ function extrudePolygon(ring, height, r, g, bCol, positions, normals, colors, in
     const roofBase = vertexOffset;
 
     for (let i = 0; i < n; i++) {
-        positions.push(pts[i][0], yOffset + height, -pts[i][1]);
+        positions.push(pts[i][0], height, -pts[i][1]);
         normals.push(0, 1, 0);
         colors.push(tr, tg, tb);
     }
@@ -183,7 +183,7 @@ function extrudePolygon(ring, height, r, g, bCol, positions, normals, colors, in
         const b = vertexOffset;
 
         // BL, BR, TR, TL
-        positions.push(x0, yOffset, wz0,  x1, yOffset, wz1,  x1, yOffset + height, wz1,  x0, yOffset + height, wz0);
+        positions.push(x0, 0, wz0,  x1, 0, wz1,  x1, height, wz1,  x0, height, wz0);
         normals.push(nx,0,nz, nx,0,nz, nx,0,nz, nx,0,nz);
         colors.push(r,g,bCol, r,g,bCol, r,g,bCol, r,g,bCol);
         indices.push(b, b+1, b+2,  b, b+2, b+3);
@@ -194,7 +194,7 @@ function extrudePolygon(ring, height, r, g, bCol, positions, normals, colors, in
 }
 
 // ── AABB fallback for degenerate polygons ────────────────────────────────────
-function buildBoxFallback(ring, height, r, g, bCol, positions, normals, colors, indices, vertexOffset, yOffset = 0) {
+function buildBoxFallback(ring, height, r, g, bCol, positions, normals, colors, indices, vertexOffset) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const pt of ring) {
         if (!isFinite(pt[0]) || !isFinite(pt[1])) continue;
@@ -210,11 +210,11 @@ function buildBoxFallback(ring, height, r, g, bCol, positions, normals, colors, 
     const tr = Math.min(r*1.12,1), tg = Math.min(g*1.12,1), tb = Math.min(bCol*1.12,1);
 
     const faces = [
-        { v:[[x0,yOffset,z1],[x1,yOffset,z1],[x1,yOffset+height,z1],[x0,yOffset+height,z1]], n:[0,0,1],   cr:r,cg:g,cb:bCol },
-        { v:[[x1,yOffset,z0],[x0,yOffset,z0],[x0,yOffset+height,z0],[x1,yOffset+height,z0]], n:[0,0,-1],  cr:r,cg:g,cb:bCol },
-        { v:[[x0,yOffset,z0],[x0,yOffset,z1],[x0,yOffset+height,z1],[x0,yOffset+height,z0]], n:[-1,0,0],  cr:r,cg:g,cb:bCol },
-        { v:[[x1,yOffset,z1],[x1,yOffset,z0],[x1,yOffset+height,z0],[x1,yOffset+height,z1]], n:[1,0,0],   cr:r,cg:g,cb:bCol },
-        { v:[[x0,yOffset+height,z1],[x1,yOffset+height,z1],[x1,yOffset+height,z0],[x0,yOffset+height,z0]], n:[0,1,0], cr:tr,cg:tg,cb:tb },
+        { v:[[x0,0,z1],[x1,0,z1],[x1,height,z1],[x0,height,z1]], n:[0,0,1],   cr:r,cg:g,cb:bCol },
+        { v:[[x1,0,z0],[x0,0,z0],[x0,height,z0],[x1,height,z0]], n:[0,0,-1],  cr:r,cg:g,cb:bCol },
+        { v:[[x0,0,z0],[x0,0,z1],[x0,height,z1],[x0,height,z0]], n:[-1,0,0],  cr:r,cg:g,cb:bCol },
+        { v:[[x1,0,z1],[x1,0,z0],[x1,height,z0],[x1,height,z1]], n:[1,0,0],   cr:r,cg:g,cb:bCol },
+        { v:[[x0,height,z1],[x1,height,z1],[x1,height,z0],[x0,height,z0]], n:[0,1,0], cr:tr,cg:tg,cb:tb },
     ];
     for (const f of faces) {
         const b = vertexOffset;
@@ -225,55 +225,9 @@ function buildBoxFallback(ring, height, r, g, bCol, positions, normals, colors, 
     return vertexOffset;
 }
 
-// ── Terrain height lookup ────────────────────────────────────────────────────
-// Samples terrain Y offset at a given scene-space (x, z) position.
-// Uses bilinear interpolation from the elevation grid.
-const EARTH_R = 6378137;
-
-function getTerrainY(sceneX, sceneZ, terrainInfo) {
-    if (!terrainInfo) return 0;
-    const { grid, resolution, minElev, maxElev, bbox, origin, exaggeration, terrainYOffset } = terrainInfo;
-    const [west, south, east, north] = bbox;
-    // Use the exact same origin as the spatial_processor & terrain mesh
-    const originLon = origin ? origin.lon : (west + east) / 2;
-    const originLat = origin ? origin.lat : (south + north) / 2;
-    const cosLat = Math.cos(originLat * Math.PI / 180);
-
-    // Reverse the Mercator projection to get lat/lon from scene x/z
-    // x = (lon - originLon) * (PI/180) * EARTH_R * cosLat
-    // z = -((lat - originLat) * (PI/180) * EARTH_R)
-    const lon = originLon + sceneX / ((Math.PI / 180) * EARTH_R * cosLat);
-    const lat = originLat - sceneZ / ((Math.PI / 180) * EARTH_R);
-
-    // Map lat/lon to grid coordinates
-    const colFrac = (lon - west) / (east - west) * (resolution - 1);
-    const rowFrac = (lat - south) / (north - south) * (resolution - 1);
-
-    // Clamp to grid bounds
-    const col0 = Math.max(0, Math.min(Math.floor(colFrac), resolution - 2));
-    const row0 = Math.max(0, Math.min(Math.floor(rowFrac), resolution - 2));
-    const col1 = col0 + 1;
-    const row1 = row0 + 1;
-
-    const fc = colFrac - col0;
-    const fr = rowFrac - row0;
-
-    // Bilinear interpolation
-    const h00 = (grid[row0] && grid[row0][col0]) || 0;
-    const h10 = (grid[row0] && grid[row0][col1]) || 0;
-    const h01 = (grid[row1] && grid[row1][col0]) || 0;
-    const h11 = (grid[row1] && grid[row1][col1]) || 0;
-
-    const rawElev = h00 * (1-fr)*(1-fc) + h10 * (1-fr)*fc + h01 * fr*(1-fc) + h11 * fr*fc;
-
-    // Must match terrainGeometry.js formula exactly:
-    // y = TERRAIN_Y_OFFSET + (rawElev - maxElev) * exaggeration
-    return terrainYOffset + (rawElev - maxElev) * exaggeration;
-}
-
 // ── Main message handler ─────────────────────────────────────────────────────
 self.onmessage = function (e) {
-    const { features, terrainInfo } = e.data;
+    const { features } = e.data;
 
     const buildings = features.filter(
         f => f.properties?.osm_type === 'building' && f.geometry?.type === 'Polygon'
@@ -310,29 +264,17 @@ self.onmessage = function (e) {
         }
         height = Math.min(Math.max(height, 4), 500);
 
-        // Compute building centroid in scene space for terrain sampling
-        let cx = 0, cy = 0;
-        const validPts = ring.length - 1; // exclude closing duplicate
-        for (let i = 0; i < validPts; i++) {
-            cx += ring[i][0];
-            cy += ring[i][1];
-        }
-        cx /= validPts;
-        cy /= validPts;
-        // scene z = -cy (building coords: ring[i][1] maps to -z in scene)
-        const yOffset = getTerrainY(cx, -cy, terrainInfo);
-
         const { r, g, b } = getBuildingColor(height);
 
         const rangeStart = indices.length;
         const prevOffset = vertexOffset;
 
         vertexOffset = extrudePolygon(ring, height, r, g, b,
-                                      positions, normals, colors, indices, vertexOffset, yOffset);
+                                      positions, normals, colors, indices, vertexOffset);
 
         if (vertexOffset === prevOffset) {
             vertexOffset = buildBoxFallback(ring, height, r, g, b,
-                                            positions, normals, colors, indices, vertexOffset, yOffset);
+                                            positions, normals, colors, indices, vertexOffset);
             fallbacks++;
         }
 
